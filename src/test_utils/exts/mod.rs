@@ -21,6 +21,9 @@ use {
 mod mock;
 pub use mock::*;
 
+mod signer;
+pub use signer::*;
+
 pub trait BlockResponseExt<T: TransactionResponse> {
 	fn tx(&self, index: usize) -> Option<&T>;
 	fn includes(&self, txs: impl IntoTxs) -> bool;

@@ -1,24 +1,5 @@
 use super::*;
 
-/// Orders query and retrieval
-impl<P: Platform> OrderPool<P> {
-	pub fn best_orders_for_block<'a>(
-		&'a self,
-		block: &'a BlockContext<P>,
-	) -> impl Iterator<Item = Order<P>> + 'a {
-		self
-			.inner
-			.orders
-			.iter()
-			.filter_map(|entry| match entry.value() {
-				t @ Order::Transaction(_) => Some(t.clone()),
-				b @ Order::Bundle(bundle) => {
-					bundle.is_eligible(block).then(|| b.clone())
-				}
-			})
-	}
-}
-
 /// This type is responsible for demultiplexing orders coming from the system
 /// transaction pool and the order pool that supports bundles. It is used in the
 /// `AppendOneOrder` step to provide a unified iterator over both sources of
@@ -59,7 +40,7 @@ impl<P: Platform> Iterator for PoolsDemux<'_, P> {
 
 	// todo: refine this logic
 	fn next(&mut self) -> Option<Self::Item> {
-		// for now precedence is given to the order pool
+		// for now precedence is given to the local order pool
 		if let Some(order_pool_iter) = self.order_pool_iter.as_mut()
 			&& let Some(order) = order_pool_iter.next()
 		{
