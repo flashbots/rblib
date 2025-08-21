@@ -2,13 +2,12 @@ use {
 	super::*,
 	core::any::Any,
 	futures::StreamExt,
+	parking_lot::RwLock,
 	reth::{
 		chainspec::EthChainSpec,
 		node::builder::{BuilderContext, FullNodeTypes, NodeTypes},
 		providers::{
-			BlockReaderIdExt,
-			CanonStateSubscriptions,
-			StateProviderFactory,
+			BlockReaderIdExt, CanonStateSubscriptions, StateProviderFactory,
 		},
 		tasks::shutdown::Shutdown,
 		transaction_pool::TransactionPool,
