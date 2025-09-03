@@ -13,6 +13,7 @@ use {
 	},
 	reth::ethereum::primitives::SignedTransaction,
 	serde::{Deserialize, Serialize},
+	tracing::trace,
 };
 
 pub(super) struct BundlesRpcApi<P: PlatformWithRpcTypes> {
@@ -67,7 +68,7 @@ impl<P: PlatformWithRpcTypes> BundlesApiServer<P> for BundlesRpcApi<P> {
 		}
 
 		let bundle_hash = bundle.hash();
-		debug!(hash = %bundle_hash, "eth_sendBundle received: {bundle:?}");
+		trace!(hash = %bundle_hash, "eth_sendBundle received: {bundle:?}");
 		self.pool.insert(Order::Bundle(bundle));
 		Ok(BundleResult { bundle_hash })
 	}
@@ -95,6 +96,12 @@ impl<P: PlatformWithRpcTypes> TransactionsApiServer<P>
 {
 	async fn send_raw_transaction(&self, bytes: Bytes) -> RpcResult<B256> {
 		let decoded = types::TxEnvelope::<P>::decode_2718(&mut &bytes[..])
+			.inspect(|tx| {
+				trace!(hash = %tx.tx_hash(), "eth_sendRawTransaction received: {tx:?}");
+			})
+			.inspect_err(|e| {
+				debug!(error = %e, data = %bytes, "eth_sendRawTransaction failed to decode tx");
+			})
 			.map_err(|e| {
 				ErrorObject::owned(
 					ErrorCode::InvalidParams.code(),
@@ -104,13 +111,18 @@ impl<P: PlatformWithRpcTypes> TransactionsApiServer<P>
 			})?;
 
 		let tx: types::Transaction<P> = decoded.into();
-		let rtx = tx.try_into_recovered().map_err(|_| {
-			ErrorObject::owned(
-				ErrorCode::InvalidParams.code(),
-				"Invalid Signature".to_owned(),
-				Some(bytes),
-			)
-		})?;
+		let rtx = tx
+			.try_into_recovered()
+			.inspect_err(|tx| {
+				debug!(tx = ?tx, "eth_sendRawTransaction: invalid signature");
+			})
+			.map_err(|_| {
+				ErrorObject::owned(
+					ErrorCode::InvalidParams.code(),
+					"Invalid Signature".to_owned(),
+					Some(bytes),
+				)
+			})?;
 
 		let txhash = *rtx.tx_hash();
 		self.pool.insert(Order::Transaction(rtx));

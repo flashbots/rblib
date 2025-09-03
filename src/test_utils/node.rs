@@ -21,17 +21,20 @@ use {
 		args::{DatadirArgs, NetworkArgs, RpcServerArgs},
 		chainspec::EthChainSpec,
 		core::exit::NodeExitFuture,
-		ethereum::provider::db::{
-			ClientVersion,
-			DatabaseEnv,
-			init_db,
-			mdbx::{
-				DatabaseArguments,
-				KILOBYTE,
-				MEGABYTE,
-				MaxReadTransactionDuration,
+		ethereum::{
+			primitives::SignerRecoverable,
+			provider::db::{
+				ClientVersion,
+				DatabaseEnv,
+				init_db,
+				mdbx::{
+					DatabaseArguments,
+					KILOBYTE,
+					MEGABYTE,
+					MaxReadTransactionDuration,
+				},
+				test_utils::{ERROR_DB_CREATION, TempDatabase},
 			},
-			test_utils::{ERROR_DB_CREATION, TempDatabase},
 		},
 		node::builder::{NodeHandle, rpc::RethRpcAddOns, *},
 		payload::builder::PayloadId,
@@ -39,6 +42,7 @@ use {
 		tasks::{TaskExecutor, TaskManager, shutdown::Shutdown},
 	},
 	reth_ipc::client::{IpcClientBuilder, IpcError},
+	reth_origin::primitives::Recovered,
 	std::{
 		sync::Arc,
 		time::{SystemTime, UNIX_EPOCH},
@@ -349,6 +353,21 @@ where
 		request: impl TransactionBuilder<types::RpcTypes<P>>,
 		signer: impl TxSignerSync<Signature> + Send + Sync + 'static,
 	) -> eyre::Result<PendingTransactionBuilder<types::RpcTypes<P>>> {
+		let envelope = self.prepare_signed_tx(request, signer).await?;
+		let encoded = envelope.encoded_2718();
+
+		self
+			.provider()
+			.send_raw_transaction(&encoded)
+			.await
+			.map_err(Into::into)
+	}
+
+	pub async fn prepare_signed_tx(
+		&self,
+		request: impl TransactionBuilder<types::RpcTypes<P>>,
+		signer: impl TxSignerSync<Signature> + Send + Sync + 'static,
+	) -> eyre::Result<Recovered<types::Transaction<P>>> {
 		let request = request.with_from(signer.address());
 
 		// if nonce is not explictly set, fetch it from the provider
@@ -397,13 +416,10 @@ where
 		let mut tx = request.build_unsigned()?;
 		let signature = signer.sign_transaction_sync(&mut tx)?;
 		let envelope: types::TxEnvelope<P> = tx.into_signed(signature).into();
-		let encoded = envelope.encoded_2718();
+		let tx: types::Transaction<P> = envelope.into();
+		let recovered = tx.try_into_recovered()?;
 
-		self
-			.provider()
-			.send_raw_transaction(&encoded)
-			.await
-			.map_err(Into::into)
+		Ok(recovered)
 	}
 }
 

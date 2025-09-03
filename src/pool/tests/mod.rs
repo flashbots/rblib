@@ -57,37 +57,33 @@ async fn one_bundle_smoke<P: TestablePlatform>() {
 	let pipeline = Pipeline::default().with_step(AppendOrders::from_pool(&pool));
 	let node = P::create_test_node_with_pool(pipeline, pool).await.unwrap();
 
-	let tx1: types::Transaction<P> = node
-		.build_tx()
-		.transfer()
-		.with_from(FundedAccounts::address(0))
-		.with_value(U256::from(1001))
-		.with_gas_price(1_000_000_000)
-		.with_gas_limit(21_000)
-		.with_max_priority_fee_per_gas(1_000_000)
-		.with_max_fee_per_gas(2_000_000)
-		.with_nonce(0)
-		.build_with_known_signer()
-		.unwrap()
-		.into();
+	let tx1 = node
+		.prepare_signed_tx(
+			node
+				.build_tx()
+				.transfer()
+				.with_from(FundedAccounts::address(0))
+				.with_value(U256::from(1001)),
+			FundedAccounts::signer(0),
+		)
+		.await
+		.unwrap();
 
-	let tx2: types::Transaction<P> = node
-		.build_tx()
-		.transfer()
-		.with_from(FundedAccounts::address(1))
-		.with_value(U256::from(1002))
-		.with_gas_price(1_000_000_000)
-		.with_gas_limit(21_000)
-		.with_max_priority_fee_per_gas(1_000_000)
-		.with_max_fee_per_gas(2_000_000)
-		.with_nonce(0)
-		.build_with_known_signer()
-		.unwrap()
-		.into();
+	let tx2 = node
+		.prepare_signed_tx(
+			node
+				.build_tx()
+				.transfer()
+				.with_from(FundedAccounts::address(1))
+				.with_value(U256::from(1002)),
+			FundedAccounts::signer(1),
+		)
+		.await
+		.unwrap();
 
 	let bundle = FlashbotsBundle::<P>::default()
-		.with_transaction(tx1.try_clone_into_recovered().unwrap())
-		.with_transaction(tx2.try_clone_into_recovered().unwrap());
+		.with_transaction(tx1.clone())
+		.with_transaction(tx2.clone());
 
 	let rpc_client = node.rpc_client().await.unwrap();
 	let res = EthBundleApiClient::send_bundle(&rpc_client, bundle.into()).await;
