@@ -6,7 +6,7 @@ use {
 			optimism::consensus::DEPOSIT_TX_TYPE_ID,
 			primitives::U256,
 		},
-		pool::OrderPool,
+		pool::{HostNodeInstaller, OrderPool},
 		prelude::*,
 		reth::{
 			cli::Cli,
@@ -58,8 +58,7 @@ async fn pipeline_with_no_txs_builds_empty_payload<P: TestablePlatform>() {
 		.with_step(OrderByPriorityFee::default())
 		.with_step(RemoveRevertedTransactions::default());
 
-	let node = P::create_test_node(pipeline).await.unwrap();
-	pool.attach_to_test_node(&node).unwrap();
+	let node = P::create_test_node_with_pool(pipeline, pool).await.unwrap();
 
 	let block = node.next_block().await.unwrap();
 	assert_eq!(block.header().number(), 1);
@@ -93,8 +92,7 @@ async fn all_transactions_included_by_one<P: TestablePlatform>() {
 		),
 	);
 
-	let node = P::create_test_node(pipeline).await.unwrap();
-	pool.attach_to_test_node(&node).unwrap();
+	let node = P::create_test_node_with_pool(pipeline, pool).await.unwrap();
 
 	let mut transfers = vec![];
 	for i in 0..10 {
@@ -145,8 +143,7 @@ async fn all_transactions_included_by_many<P: TestablePlatform>() {
 		),
 	);
 
-	let node = P::create_test_node(pipeline).await.unwrap();
-	pool.attach_to_test_node(&node).unwrap();
+	let node = P::create_test_node_with_pool(pipeline, pool).await.unwrap();
 
 	let mut transfers = vec![];
 	for i in 0..10 {
@@ -206,9 +203,12 @@ async fn reth_minimal_integration_example() {
 			let handle = builder
 				.with_types::<EthereumNode>()
 				.with_components(
-					EthereumNode::components().payload(pipeline.into_service()),
+					EthereumNode::components()
+						.replace_pool(&pool)
+						.payload(pipeline.into_service()),
 				)
 				.with_add_ons(EthereumAddOns::default())
+				.extend_rpc_modules(move |mut ctx| pool.attach_rpc(&mut ctx))
 				.launch()
 				.await?;
 

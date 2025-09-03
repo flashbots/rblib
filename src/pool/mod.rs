@@ -13,6 +13,7 @@ use {
 		primitives::{Recovered, SealedHeader},
 	},
 	std::sync::Arc,
+	tokio::sync::broadcast,
 };
 
 mod host;
@@ -23,6 +24,9 @@ mod rpc;
 mod select;
 mod setup;
 mod step;
+
+#[cfg(test)]
+mod tests;
 
 // Order Pool public API
 pub use {
@@ -159,7 +163,6 @@ impl<P: Platform> Default for OrderPool<P> {
 	}
 }
 
-#[derive(Default)]
 struct OrderPoolInner<P: Platform> {
 	orders: DashMap<B256, Order<P>>,
 
@@ -167,9 +170,25 @@ struct OrderPoolInner<P: Platform> {
 	/// them.
 	txmap: DashMap<TxHash, DashSet<B256>>,
 
+	/// A channel that broadcasts new incoming orders to all active sinks.
+	_broadcast: broadcast::Sender<Order<P>>,
+
 	/// The host Reth node that this order pool is attached to.
 	/// Attachment is done by the `attach_pool` method during node components
 	host: Arc<host::HostNode<P>>,
+}
+
+impl<P: Platform> Default for OrderPoolInner<P> {
+	fn default() -> Self {
+		const ORDERS_BACKLOG_CAPACITY: usize = 128;
+
+		Self {
+			orders: DashMap::new(),
+			txmap: DashMap::new(),
+			host: Arc::new(host::HostNode::default()),
+			_broadcast: broadcast::Sender::new(ORDERS_BACKLOG_CAPACITY),
+		}
+	}
 }
 
 impl<P: Platform> OrderPoolInner<P> {

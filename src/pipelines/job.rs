@@ -204,10 +204,11 @@ where
 				writeln!(&mut out, "    Timestamp: {:?}", built_block.timestamp())?;
 				writeln!(
 					&mut out,
-					"    Gas: {}/{} ({}%)",
+					"    Gas: {}/{} ({:.2}%)",
 					built_block.gas_used(),
 					built_block.gas_limit(),
-					built_block.gas_used() * 100 / built_block.gas_limit()
+					built_block.gas_used() as f32 * 100.0
+						/ built_block.gas_limit() as f32
 				)?;
 				writeln!(
 					&mut out,

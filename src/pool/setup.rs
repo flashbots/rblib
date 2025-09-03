@@ -5,7 +5,12 @@
 
 use {
 	super::{
-		rpc::{BundleRpcApi, BundlesApiServer},
+		rpc::{
+			BundlesApiServer,
+			BundlesRpcApi,
+			TransactionsApiServer,
+			TransactionsRpcApi,
+		},
 		*,
 	},
 	core::mem::MaybeUninit,
@@ -23,7 +28,7 @@ use {
 	},
 };
 
-impl<P: Platform> OrderPool<P> {
+impl<P: PlatformWithRpcTypes> OrderPool<P> {
 	/// Installs the order pool RPC endpoints for receiving bundles and other
 	/// methods offered by the common reth rpc infra.
 	pub fn attach_rpc<Node, EthApi>(
@@ -36,7 +41,11 @@ impl<P: Platform> OrderPool<P> {
 	{
 		rpc_context
 			.modules
-			.add_or_replace_configured(BundleRpcApi::new(self).into_rpc())?;
+			.add_or_replace_configured(BundlesRpcApi::new(self).into_rpc())?;
+
+		rpc_context
+			.modules
+			.add_or_replace_configured(TransactionsRpcApi::new(self).into_rpc())?;
 
 		Ok(())
 	}
@@ -80,13 +89,13 @@ impl<P: Platform> OrderPool<P> {
 /// 		})
 /// 		.unwrap();
 /// ```
-pub trait HostNodeInstaller<P: Platform> {
+pub trait HostNodeInstaller<P: PlatformWithRpcTypes> {
 	type Node: FullNodeTypes<Types: NodeTypes<Primitives = types::Primitives<P>>>;
 
 	/// The type of the `ComponentsBuilder` with a wrapped pool builder.
 	type Output<WrappedPoolB>;
 
-	fn attach_pool(
+	fn replace_pool(
 		self,
 		with: &OrderPool<P>,
 	) -> Self::Output<
@@ -97,7 +106,7 @@ pub trait HostNodeInstaller<P: Platform> {
 	>;
 }
 
-impl<P: Platform, Node, PoolB, PayloadB, NetworkB, ExecB, ConsB>
+impl<P: PlatformWithRpcTypes, Node, PoolB, PayloadB, NetworkB, ExecB, ConsB>
 	HostNodeInstaller<P>
 	for ComponentsBuilder<Node, PoolB, PayloadB, NetworkB, ExecB, ConsB>
 where
@@ -108,7 +117,7 @@ where
 	type Output<WrappedPoolB> =
 		ComponentsBuilder<Node, WrappedPoolB, PayloadB, NetworkB, ExecB, ConsB>;
 
-	fn attach_pool(
+	fn replace_pool(
 		self,
 		to: &OrderPool<P>,
 	) -> Self::Output<
@@ -135,12 +144,12 @@ where
 /// reth it will store a reference to the system transaction pool as well as
 /// attach the reth node to the order pool.
 #[must_use]
-struct SystemPoolWrapper<P: Platform, Builder> {
+struct SystemPoolWrapper<P: PlatformWithRpcTypes, Builder> {
 	builder: Builder,
 	order_pool: Arc<OrderPoolInner<P>>,
 }
 
-impl<P: Platform, Builder> SystemPoolWrapper<P, Builder> {
+impl<P: PlatformWithRpcTypes, Builder> SystemPoolWrapper<P, Builder> {
 	pub fn new<Node>(builder: Builder, order_pool: Arc<OrderPoolInner<P>>) -> Self
 	where
 		Builder: PoolBuilderBounds<P, Node>,
@@ -155,7 +164,7 @@ impl<P: Platform, Builder> SystemPoolWrapper<P, Builder> {
 
 impl<P, Builder, Node> PoolBuilder<Node> for SystemPoolWrapper<P, Builder>
 where
-	P: Platform,
+	P: PlatformWithRpcTypes,
 	Builder: PoolBuilderBounds<P, Node>,
 	Node: FullNodeTypes<Types: NodeTypes<Primitives = types::Primitives<P>>>,
 {

@@ -25,8 +25,7 @@ async fn empty_payload_when_all_txs_revert_loop<P: TestablePlatform>() {
 		),
 	);
 
-	let node = P::create_test_node(pipeline).await.unwrap();
-	pool.attach_to_test_node(&node).unwrap();
+	let node = P::create_test_node_with_pool(pipeline, pool).await.unwrap();
 
 	let mut reverts = vec![];
 	for i in 0..10 {
@@ -61,8 +60,7 @@ async fn transfers_included_reverts_excluded_loop<P: TestablePlatform>() {
 		),
 	);
 
-	let node = P::create_test_node(pipeline).await.unwrap();
-	pool.attach_to_test_node(&node).unwrap();
+	let node = P::create_test_node_with_pool(pipeline, pool).await.unwrap();
 
 	let mut transfers = vec![];
 	for i in 0..10 {
@@ -111,8 +109,7 @@ async fn transfers_included_reverts_excluded_flat<P: TestablePlatform>() {
 		.with_step(OrderByPriorityFee::default())
 		.with_step(RemoveRevertedTransactions::default());
 
-	let node = P::create_test_node(pipeline).await.unwrap();
-	pool.attach_to_test_node(&node).unwrap();
+	let node = P::create_test_node_with_pool(pipeline, pool).await.unwrap();
 
 	let mut transfers = vec![];
 	for i in 0..10 {

@@ -1,6 +1,6 @@
 use {
 	super::{ConsensusDriver, LocalNode},
-	crate::prelude::*,
+	crate::{pool::OrderPool, prelude::*},
 };
 
 /// This trait is used to automatically select the correct local test node type
@@ -58,6 +58,28 @@ pub trait TestNodeFactory<P: Platform + PlatformWithRpcTypes> {
 
 	/// Using the platform definition type alone and a pipeline this will create a
 	/// fully functional [`LocalNode`] that is an in-process reth node with the
+	/// pipeline configured as they payload builder and the `OrderPool` as the
+	/// transaction pool. The system transaction pool will not be used.
+	///
+	/// The test node has all the battery included, for accessing the node RPC
+	/// interface, triggering the EL <-> CL payload building protocol, and so on.
+	/// See docs for [`LocalNode`] for more details.
+	///
+	/// This variant will use the default CLI arguments for the platform.
+	fn create_test_node_with_pool(
+		pipeline: Pipeline<P>,
+		pool: OrderPool<P>,
+	) -> impl Future<Output = eyre::Result<LocalNode<P, Self::ConsensusDriver>>>
+	{
+		Self::create_test_node_with_args_and_pool(
+			pipeline,
+			Self::CliExtArgs::default(),
+			Some(pool),
+		)
+	}
+
+	/// Using the platform definition type alone and a pipeline this will create a
+	/// fully functional [`LocalNode`] that is an in-process reth node with the
 	/// pipeline configured as they payload builder.
 	///
 	/// The test node has all the battery included, for accessing the node RPC
@@ -69,6 +91,26 @@ pub trait TestNodeFactory<P: Platform + PlatformWithRpcTypes> {
 	fn create_test_node_with_args(
 		pipeline: Pipeline<P>,
 		args: Self::CliExtArgs,
+	) -> impl Future<Output = eyre::Result<LocalNode<P, Self::ConsensusDriver>>>
+	{
+		Self::create_test_node_with_args_and_pool(pipeline, args, None)
+	}
+
+	/// Using the platform definition type alone and a pipeline this will create a
+	/// fully functional [`LocalNode`] that is an in-process reth node with the
+	/// pipeline configured as they payload builder and the `OrderPool` as the
+	/// transaction pool. The system transaction pool will not be used.
+	///
+	/// The test node has all the battery included, for accessing the node RPC
+	/// interface, triggering the EL <-> CL payload building protocol, and so on.
+	/// See docs for [`LocalNode`] for more details.
+	///
+	/// This variant allows to pass the `Ext` type that is used to extend the reth
+	/// node cli arguments.
+	fn create_test_node_with_args_and_pool(
+		pipeline: Pipeline<P>,
+		args: Self::CliExtArgs,
+		pool: Option<OrderPool<P>>,
 	) -> impl Future<Output = eyre::Result<LocalNode<P, Self::ConsensusDriver>>>;
 }
 

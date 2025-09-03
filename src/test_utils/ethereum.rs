@@ -1,6 +1,11 @@
 use {
 	super::*,
-	crate::{alloy, prelude::*, reth},
+	crate::{
+		alloy,
+		pool::{HostNodeInstaller, OrderPool},
+		prelude::*,
+		reth,
+	},
 	alloy::{
 		eips::{BlockNumberOrTag, eip7685::RequestsOrHash},
 		primitives::B256,
@@ -26,20 +31,36 @@ impl TestNodeFactory<Ethereum> for Ethereum {
 	type CliExtArgs = ();
 	type ConsensusDriver = EthConsensusDriver;
 
-	async fn create_test_node_with_args(
+	async fn create_test_node_with_args_and_pool(
 		pipeline: Pipeline<Ethereum>,
 		(): Self::CliExtArgs,
+		pool: Option<OrderPool<Ethereum>>,
 	) -> eyre::Result<LocalNode<Ethereum, Self::ConsensusDriver>> {
 		let chainspec = chainspec::DEV.as_ref().clone().with_funded_accounts();
-		LocalNode::new(EthConsensusDriver, chainspec, move |builder| {
-			builder
-				.with_types::<EthereumNode>()
-				.with_components(
-					EthereumNode::components().payload(pipeline.into_service()),
-				)
-				.with_add_ons(EthereumAddOns::default())
-		})
-		.await
+		if let Some(pool) = pool {
+			LocalNode::new(EthConsensusDriver, chainspec, move |builder| {
+				builder
+					.with_types::<EthereumNode>()
+					.with_components(
+						EthereumNode::components()
+							.replace_pool(&pool)
+							.payload(pipeline.into_service()),
+					)
+					.with_add_ons(EthereumAddOns::default())
+					.extend_rpc_modules(move |mut rpc_ctx| pool.attach_rpc(&mut rpc_ctx))
+			})
+			.await
+		} else {
+			LocalNode::new(EthConsensusDriver, chainspec, move |builder| {
+				builder
+					.with_types::<EthereumNode>()
+					.with_components(
+						EthereumNode::components().payload(pipeline.into_service()),
+					)
+					.with_add_ons(EthereumAddOns::default())
+			})
+			.await
+		}
 	}
 }
 

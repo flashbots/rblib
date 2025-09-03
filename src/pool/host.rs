@@ -143,42 +143,6 @@ impl<P: Platform> HostNode<P> {
 	}
 }
 
-#[cfg(feature = "test-utils")]
-impl<P: PlatformWithRpcTypes> HostNode<P> {
-	pub fn attach_to_test_node<C: crate::test_utils::ConsensusDriver<P>>(
-		self: &Arc<Self>,
-		node: &crate::test_utils::LocalNode<P, C>,
-		order_pool: OrderPool<P>,
-	) -> eyre::Result<()> {
-		use parking_lot::lock_api::RwLock;
-
-		let tip_header = SealedHeader::new(
-			node.config().chain.genesis_header().clone(),
-			node.config().chain.genesis_hash(),
-		);
-
-		self
-			.instances
-			.set(Instances {
-				order_pool,
-				system_pool: node.pool().clone(),
-				state_provider: node.state_provider().clone(),
-				canonical_sub: node.canonical_chain_updates().clone(),
-				tip_header: RwLock::new(tip_header),
-				shutdown: node.on_shutdown(),
-			})
-			.map_err(|_| {
-				eyre::eyre!("There is a host already attached to this instance")
-			})?;
-
-		node.task_manager().executor().spawn_critical(
-			"HostNode maintenance loop",
-			Arc::clone(self).maintenance_loop(),
-		);
-		Ok(())
-	}
-}
-
 struct Instances<P: Platform> {
 	/// The transaction pool constructed during reth node setup.
 	/// In this iteration of the `OrderPool` implementation, this is where
@@ -204,15 +168,4 @@ struct Instances<P: Platform> {
 
 	/// A future that resolves when the host node is shutting down.
 	shutdown: Shutdown,
-}
-
-#[cfg(feature = "test-utils")]
-impl<P: PlatformWithRpcTypes> OrderPool<P> {
-	pub fn attach_to_test_node<C: crate::test_utils::ConsensusDriver<P>>(
-		&self,
-		node: &crate::test_utils::LocalNode<P, C>,
-	) -> eyre::Result<()> {
-		let inner = Arc::clone(&self.inner);
-		self.inner.host.attach_to_test_node(node, inner.outer())
-	}
 }

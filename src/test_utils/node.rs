@@ -33,7 +33,7 @@ use {
 			},
 			test_utils::{ERROR_DB_CREATION, TempDatabase},
 		},
-		node::builder::{rpc::RethRpcAddOns, *},
+		node::builder::{NodeHandle, rpc::RethRpcAddOns, *},
 		payload::builder::PayloadId,
 		providers::{CanonStateSubscriptions, StateProviderFactory},
 		tasks::{TaskExecutor, TaskManager, shutdown::Shutdown},

@@ -93,6 +93,11 @@ pub mod reth {
 		pub mod primitives {
 			pub use reth_optimism_primitives::*;
 		}
+
+		#[cfg(feature = "test-utils")]
+		pub mod rpc {
+			pub use reth_optimism_rpc::*;
+		}
 	}
 }
 
