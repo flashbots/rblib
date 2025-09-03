@@ -91,6 +91,12 @@ impl IntoTxs for &[TxHash] {
 	}
 }
 
+impl IntoTxs for &[&TxHash] {
+	fn into_txs(self) -> Vec<TxHash> {
+		self.iter().map(|tx| **tx).collect()
+	}
+}
+
 pub trait TransactionRequestExt<N: Network> {
 	/// Use a specific funded account that is defined in genesis of the test
 	/// local node.

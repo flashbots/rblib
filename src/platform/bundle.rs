@@ -192,7 +192,7 @@ impl Eligibility {
 ///
 /// By default this is the bundle type that is used by both the `Ethereum` and
 /// `Optimism` platforms.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FlashbotsBundle<P: Platform> {
 	inner: EthSendBundle,
 	recovered: Vec<Recovered<types::Transaction<P>>>,
@@ -433,5 +433,17 @@ impl<P: Platform> TryFrom<EthSendBundle> for FlashbotsBundle<P> {
 			.collect::<Result<Vec<_>, _>>()?;
 
 		Ok(Self { inner, recovered })
+	}
+}
+
+impl<P: Platform> From<FlashbotsBundle<P>> for EthSendBundle {
+	fn from(bundle: FlashbotsBundle<P>) -> Self {
+		bundle.into_inner()
+	}
+}
+
+impl<P: Platform> core::fmt::Debug for FlashbotsBundle<P> {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		self.inner.fmt(f)
 	}
 }

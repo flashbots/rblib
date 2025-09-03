@@ -92,6 +92,8 @@ impl<P: Platform> OrderPool<P> {
 	/// Adds a new order to the pool and makes it potentially available to be
 	/// returned by `best_orders()`.
 	pub fn insert(&self, order: Order<P>) {
+		tracing::info!(">--> Inserting order: {order:#?}");
+
 		let order_hash = order.hash();
 
 		for tx in order.transactions() {

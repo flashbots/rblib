@@ -112,8 +112,6 @@ impl<P: PlatformWithRpcTypes> TransactionsApiServer<P>
 			)
 		})?;
 
-		tracing::info!(">--> OrderPool::eth_sendRawTransaction: {rtx:#?}");
-
 		let txhash = *rtx.tx_hash();
 		self.pool.insert(Order::Transaction(rtx));
 
