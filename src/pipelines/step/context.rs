@@ -68,6 +68,16 @@ impl<P: Platform> StepContext<P> {
 		self.started_at
 	}
 
+	pub fn scope_deadline_at(&self) -> Option<Instant> {
+		if let (Some(deadline), Some(started_at)) =
+			(self.limits.deadline, self.started_at)
+		{
+			Some(started_at + deadline)
+		} else {
+			None
+		}
+	}
+
 	/// Checks if the scope of this step has been running longer than the deadline
 	/// specified in the limits. If the limits do not specify any deadline this
 	/// will return false.

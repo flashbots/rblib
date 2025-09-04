@@ -60,7 +60,7 @@ impl TestNodeFactory<Optimism> for Optimism {
 					.with_components(
 						opnode
 							.components()
-							.replace_pool(&pool)
+							.attach_pool(&pool)
 							.payload(pipeline.into_service()),
 					)
 					.with_add_ons(opnode

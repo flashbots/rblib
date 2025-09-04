@@ -7,7 +7,6 @@ use {
 		primitives::{B256, TxHash},
 	},
 	dashmap::{DashMap, DashSet},
-	parking_lot::RwLock,
 	reth::{
 		ethereum::primitives::SignedTransaction,
 		primitives::{Recovered, SealedHeader},
@@ -16,118 +15,50 @@ use {
 	tokio::sync::broadcast,
 };
 
+mod config;
+mod filter;
 mod host;
+mod insert;
 mod maintain;
 mod native;
+mod order;
+mod pipeline;
 mod report;
 mod rpc;
-mod select;
+mod score;
 mod setup;
-mod step;
+mod stream;
 
 #[cfg(test)]
 mod tests;
 
 // Order Pool public API
 pub use {
-	rpc::{BundleResult, BundlesApiClient},
-	setup::HostNodeInstaller,
-	step::{
+	config::Config,
+	filter::*,
+	order::Order,
+	pipeline::{
 		AppendOrders,
 		OrderInclusionAttempt,
 		OrderInclusionFailure,
 		OrderInclusionSuccess,
 	},
+	rpc::{BundleResult, BundlesApiClient},
+	setup::HostNodeInstaller,
 };
-
-#[derive(Debug, Clone)]
-pub enum Order<P: Platform> {
-	/// A single transaction.
-	Transaction(Recovered<types::Transaction<P>>),
-	/// A bundle of transactions.
-	Bundle(types::Bundle<P>),
-}
-
-impl<P: Platform> Order<P> {
-	pub fn hash(&self) -> B256 {
-		match self {
-			Order::Transaction(tx) => *tx.tx_hash(),
-			Order::Bundle(bundle) => bundle.hash(),
-		}
-	}
-
-	pub fn transactions(&self) -> &[Recovered<types::Transaction<P>>] {
-		match self {
-			Order::Bundle(bundle) => bundle.transactions(),
-			Order::Transaction(tx) => core::slice::from_ref(tx),
-		}
-	}
-
-	pub fn try_into_executable(self) -> Result<Executable<P>, RecoveryError> {
-		match self {
-			Order::Transaction(tx) => tx.try_into_executable(),
-			Order::Bundle(bundle) => bundle.try_into_executable(),
-		}
-	}
-
-	pub const fn is_bundle(&self) -> bool {
-		matches!(self, Order::Bundle(_))
-	}
-}
 
 /// Implements an order pool that handles mempool operations for transactions
 /// and bundles.
 ///
 /// Notes:
+///
 ///  - This type is cheap to clone, all clones of this type share the same
 ///    underlying instance.
+///
 ///  - This type is referenced by steps and RPC modules when constructing a
 ///    pipeline and Reth node.
 pub struct OrderPool<P: Platform> {
 	inner: Arc<OrderPoolInner<P>>,
-}
-
-/// Orders manipulation
-impl<P: Platform> OrderPool<P> {
-	/// Adds a new order to the pool and makes it potentially available to be
-	/// returned by `best_orders()`.
-	pub fn insert(&self, order: Order<P>) {
-		tracing::info!(">--> Inserting order: {order:#?}");
-
-		let order_hash = order.hash();
-
-		for tx in order.transactions() {
-			// keep track of all orders that contain this transaction.
-			// When this transaction ends up in a produced payload, all orders
-			// containing it will be invalidated and removed from the pool.
-			let txhash = *tx.tx_hash();
-			self
-				.inner
-				.txmap
-				.entry(txhash)
-				.or_default()
-				.insert(order_hash);
-		}
-
-		self.inner.orders.insert(order_hash, order);
-	}
-
-	/// Removes an order from the pool and makes it no longer available through
-	/// `best_orders()`.
-	pub fn remove(&self, order_hash: &B256) {
-		self.inner.orders.remove(order_hash);
-		self.inner.host.remove_transaction(*order_hash);
-	}
-
-	/// Removes all orders that contain the a specific transaction hash.
-	pub fn remove_any_with(&self, txhash: TxHash) {
-		self.inner.host.remove_transaction(txhash);
-		if let Some((_, orders)) = self.inner.txmap.remove(&txhash) {
-			for order_hash in orders {
-				self.remove(&order_hash);
-			}
-		}
-	}
 }
 
 impl<P: Platform> OrderPool<P> {
@@ -141,12 +72,6 @@ impl<P: Platform> OrderPool<P> {
 			.map_tip_header(|header| bundle.is_permanently_ineligible(header))
 			.unwrap_or(false)
 	}
-
-	/// Returns `true` if the order pool is attached to a host Reth node.
-	/// This is done by the `attach_pool` method during node components setup.
-	pub fn is_attached_to_host(&self) -> bool {
-		self.inner.host.is_attached()
-	}
 }
 
 impl<P: Platform> Clone for OrderPool<P> {
@@ -157,15 +82,10 @@ impl<P: Platform> Clone for OrderPool<P> {
 	}
 }
 
-impl<P: Platform> Default for OrderPool<P> {
-	fn default() -> Self {
-		Self {
-			inner: Arc::new(OrderPoolInner::default()),
-		}
-	}
-}
-
 struct OrderPoolInner<P: Platform> {
+	/// Set during `OrderPool` construction.
+	config: Config<P>,
+
 	orders: DashMap<B256, Order<P>>,
 
 	/// A map that keeps track of transaction hashes and orders that contain
@@ -173,23 +93,26 @@ struct OrderPoolInner<P: Platform> {
 	txmap: DashMap<TxHash, DashSet<B256>>,
 
 	/// A channel that broadcasts new incoming orders to all active sinks.
-	_broadcast: broadcast::Sender<Order<P>>,
+	fanout: broadcast::Sender<Arc<Order<P>>>,
 
 	/// The host Reth node that this order pool is attached to.
 	/// Attachment is done by the `attach_pool` method during node components
 	host: Arc<host::HostNode<P>>,
 }
 
-impl<P: Platform> Default for OrderPoolInner<P> {
-	fn default() -> Self {
-		const ORDERS_BACKLOG_CAPACITY: usize = 128;
-
+impl<P: Platform> OrderPoolInner<P> {
+	pub fn new(config: Config<P>) -> Self {
 		Self {
 			orders: DashMap::new(),
 			txmap: DashMap::new(),
 			host: Arc::new(host::HostNode::default()),
-			_broadcast: broadcast::Sender::new(ORDERS_BACKLOG_CAPACITY),
+			fanout: broadcast::Sender::new(config.inflight_backlog_capacity),
+			config,
 		}
+	}
+
+	pub const fn config(&self) -> &Config<P> {
+		&self.config
 	}
 }
 

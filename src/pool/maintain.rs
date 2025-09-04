@@ -48,14 +48,13 @@ impl<P: Platform> OrderPool<P> {
 			loop {
 				tokio::select! {
 					Some(OrderInclusionAttempt(order, payload_id)) = inclusion.next() => {
-						tracing::trace!(">--> order inclusion attempt: {order} in payload job {payload_id}");
 						order_pool.report_inclusion_attempt(order, payload_id);
 					}
 					Some(OrderInclusionSuccess(order, payload_id)) = success.next() => {
-						tracing::trace!(">--> order inclusion success: {order} in payload job {payload_id}");
+						tracing::trace!("order inclusion success: {order} in payload job {payload_id}");
 					}
 					Some(OrderInclusionFailure(order, err, payload_id)) = failure.next() => {
-						tracing::trace!(">--> order inclusion failure: {order} in payload job {payload_id} - {err}");
+						tracing::trace!("order inclusion failure: {order} in payload job {payload_id} - {err}");
 						order_pool.report_execution_error(order, &err);
 					}
 					Some(PipelineDropped) = dropped.next() => {

@@ -1,16 +1,25 @@
+//! This module implements a convenient integration point for the Pipelines API
+//! through the `AppendOrders` step that appends new available orders to the
+//! payload under construction.
+
 use {
-	super::*,
+	super::{stream::OrdersStream, *},
 	crate::{alloy, reth},
 	alloy::{consensus::Transaction, primitives::B256},
-	core::sync::atomic::{AtomicU32, Ordering},
+	core::{
+		sync::atomic::{AtomicU32, Ordering},
+		time::Duration,
+	},
 	dashmap::DashSet,
+	futures::StreamExt,
 	metrics::{Counter, Histogram},
 	reth::{
 		chainspec::MIN_TRANSACTION_GAS,
 		ethereum::primitives::SignedTransaction,
 		payload::builder::PayloadId,
 	},
-	std::{collections::HashSet, sync::Arc},
+	std::{collections::HashSet, sync::Arc, time::Instant},
+	tokio::{sync::RwLock, time::timeout_at},
 };
 
 /// This step will append new orders from the enabled pools to the end of
@@ -20,6 +29,21 @@ use {
 ///
 /// It will append new orders until either the payload limit, or the pool is
 /// exhausted or one of the configured limits is reached.
+///
+/// Integration example with the Pipelines API:
+///
+/// ```rust
+/// let pool = OrderPool::default();
+/// Pipeline::<Flashblocks>::named("classic")
+/// 	.with_prologue(OptimismPrologue)
+/// 	.with_pipeline(
+/// 		Loop,
+/// 		(
+/// 			AppendOrders::from_pool(&pool),
+/// 			OrderByPriorityFee::default(),
+/// 		),
+/// 	);
+/// ```
 pub struct AppendOrders<P: Platform> {
 	/// An optional instance of the `OrderPool` that supports bundles.
 	/// If this is `None`, only the system transaction pool that supports only
@@ -68,6 +92,9 @@ pub struct AppendOrders<P: Platform> {
 	/// Defaults to `true`.
 	break_on_limit: bool,
 
+	/// A new instance of the `OrdersStream` is created for each new payload job.
+	stream: RwLock<Option<OrdersStream<P>>>,
+
 	metrics: Metrics,
 	per_job: PerJobCounters,
 }
@@ -86,6 +113,7 @@ impl<P: Platform> AppendOrders<P> {
 			break_on_limit: true,
 			metrics: Metrics::default(),
 			per_job: PerJobCounters::default(),
+			stream: RwLock::new(None),
 		}
 	}
 
@@ -144,13 +172,21 @@ impl<P: Platform> Step<P> for AppendOrders<P> {
 	/// Called before each new payload job starts
 	async fn before_job(
 		self: Arc<Self>,
-		_: StepContext<P>,
+		ctx: StepContext<P>,
 	) -> Result<(), PayloadBuilderError> {
 		// Clear the list of attempted orders for this payload job.
 		self.attempted.clear();
 
 		// reset per job metrics counter
 		self.per_job.reset();
+
+		// Initialize the orders iterator for this payload job.
+		self
+			.stream
+			.write()
+			.await
+			.replace(OrdersStream::new(&self.order_pool, ctx.block()));
+
 		Ok(())
 	}
 
@@ -161,6 +197,8 @@ impl<P: Platform> Step<P> for AppendOrders<P> {
 		_: Arc<Result<types::BuiltPayload<P>, PayloadBuilderError>>,
 	) -> Result<(), PayloadBuilderError> {
 		self.metrics.record_per_job(&self.per_job);
+		self.stream.write().await.take(); // clear the iterator
+
 		Ok(())
 	}
 
@@ -169,9 +207,11 @@ impl<P: Platform> Step<P> for AppendOrders<P> {
 		payload: Checkpoint<P>,
 		ctx: StepContext<P>,
 	) -> ControlFlow<P> {
-		// Create an iterator that will return the best orders for the given block.
-		// The logic for selecting those orders is inside the `select.rs` module.
-		let mut orders = self.order_pool.best_orders_for_block(ctx.block());
+		// Use the orders iterator that was created for this payload job.
+		let mut iter_lock = self.stream.write().await;
+		let orders_iter = iter_lock
+			.as_mut()
+			.expect("must have been initialized in before_job");
 
 		// state of one step invocation
 		let mut run = Run::new(&self, &ctx, payload);
@@ -182,8 +222,16 @@ impl<P: Platform> Step<P> for AppendOrders<P> {
 				return run.end();
 			}
 
+			let next = timeout_at(
+				ctx
+					.scope_deadline_at()
+					.unwrap_or(Instant::now() + Duration::from_millis(20))
+					.into(),
+				orders_iter.next(),
+			);
+
 			// pull next order
-			let Some(order) = orders.next() else {
+			let Ok(Some(order)) = next.await else {
 				// No more orders in the pool to add to the payload.
 				return run.end();
 			};

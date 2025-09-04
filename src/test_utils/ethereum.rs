@@ -43,7 +43,7 @@ impl TestNodeFactory<Ethereum> for Ethereum {
 					.with_types::<EthereumNode>()
 					.with_components(
 						EthereumNode::components()
-							.replace_pool(&pool)
+							.attach_pool(&pool)
 							.payload(pipeline.into_service()),
 					)
 					.with_add_ons(EthereumAddOns::default())

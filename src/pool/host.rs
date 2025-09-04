@@ -2,6 +2,7 @@ use {
 	super::*,
 	crate::pool::native::NativeTransactionPool,
 	futures::StreamExt,
+	parking_lot::RwLock,
 	reth::{
 		chainspec::EthChainSpec,
 		node::builder::{BuilderContext, FullNodeTypes, NodeTypes},

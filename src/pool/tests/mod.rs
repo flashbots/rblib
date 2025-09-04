@@ -84,10 +84,14 @@ async fn one_bundle_smoke<P: TestablePlatform>() {
 	let bundle = FlashbotsBundle::<P>::default()
 		.with_transaction(tx1.clone())
 		.with_transaction(tx2.clone());
+	let bundle_hash = bundle.hash();
 
 	let rpc_client = node.rpc_client().await.unwrap();
-	let res = EthBundleApiClient::send_bundle(&rpc_client, bundle.into()).await;
-	tracing::info!(">---> sendBudle response: {res:#?}");
+	let res = EthBundleApiClient::send_bundle(&rpc_client, bundle.into())
+		.await
+		.unwrap();
+
+	assert_eq!(res.bundle_hash, bundle_hash);
 
 	let block = node.next_block().await.unwrap();
 	info!("block built: {block:#?}");

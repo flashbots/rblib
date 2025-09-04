@@ -29,6 +29,12 @@ use {
 };
 
 impl<P: PlatformWithRpcTypes> OrderPool<P> {
+	/// Returns `true` if the order pool is attached to a host Reth node.
+	/// This is done by the `attach_pool` method during node components setup.
+	pub fn is_attached_to_host(&self) -> bool {
+		self.inner.host.is_attached()
+	}
+
 	/// Installs the order pool RPC endpoints for receiving bundles and other
 	/// methods offered by the common reth rpc infra.
 	pub fn attach_rpc<Node, EthApi>(
@@ -43,9 +49,12 @@ impl<P: PlatformWithRpcTypes> OrderPool<P> {
 			.modules
 			.add_or_replace_configured(BundlesRpcApi::new(self).into_rpc())?;
 
-		rpc_context
-			.modules
-			.add_or_replace_configured(TransactionsRpcApi::new(self).into_rpc())?;
+		if self.config().disable_native_pool {
+			// intercept all RPC transactions
+			rpc_context
+				.modules
+				.add_or_replace_configured(TransactionsRpcApi::new(self).into_rpc())?;
+		}
 
 		Ok(())
 	}
@@ -95,7 +104,7 @@ pub trait HostNodeInstaller<P: PlatformWithRpcTypes> {
 	/// The type of the `ComponentsBuilder` with a wrapped pool builder.
 	type Output<WrappedPoolB>;
 
-	fn replace_pool(
+	fn attach_pool(
 		self,
 		with: &OrderPool<P>,
 	) -> Self::Output<
@@ -117,7 +126,7 @@ where
 	type Output<WrappedPoolB> =
 		ComponentsBuilder<Node, WrappedPoolB, PayloadB, NetworkB, ExecB, ConsB>;
 
-	fn replace_pool(
+	fn attach_pool(
 		self,
 		to: &OrderPool<P>,
 	) -> Self::Output<
