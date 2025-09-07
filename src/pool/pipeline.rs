@@ -5,7 +5,10 @@
 use {
 	super::{stream::OrdersStream, *},
 	crate::{alloy, reth},
-	alloy::{consensus::Transaction, primitives::B256},
+	alloy::{
+		consensus::Transaction,
+		primitives::{B256, TxHash},
+	},
 	core::{
 		sync::atomic::{AtomicU32, Ordering},
 		time::Duration,
@@ -249,7 +252,7 @@ impl<P: Platform> Step<P> for AppendOrders<P> {
 				continue;
 			}
 
-			run.try_include(order);
+			run.try_include(order.into());
 		}
 	}
 }
@@ -673,6 +676,50 @@ impl PerJobCounters {
 
 		if checkpoint.is_bundle() {
 			self.bundles_included.fetch_add(1, Ordering::Relaxed);
+		}
+	}
+}
+
+impl<P: PlatformWithRpcTypes> OrderPool<P> {
+	/// Attaches the order pool to a pipeline, allowing it to listen for
+	/// events emitted by the pipeline. Those events help the order pool
+	/// garbage collect orders and offer better order proposals.
+	pub fn attach_pipeline(&self, pipeline: &Pipeline<P>) {
+		tokio::spawn(self.forward_pipeline_events(pipeline));
+	}
+}
+
+impl<P: Platform> OrderPool<P> {
+	fn forward_pipeline_events(
+		&self,
+		pipeline: &Pipeline<P>,
+	) -> impl Future<Output = eyre::Result<()>> + 'static {
+		let mut inclusion = pipeline.subscribe::<OrderInclusionAttempt>();
+		let mut success = pipeline.subscribe::<OrderInclusionSuccess>();
+		let mut failure = pipeline.subscribe::<OrderInclusionFailure<P>>();
+		let mut dropped = pipeline.subscribe::<PipelineDropped>();
+
+		let order_pool = self.clone();
+
+		async move {
+			loop {
+				tokio::select! {
+					Some(OrderInclusionAttempt(order, payload_id)) = inclusion.next() => {
+						order_pool.report_inclusion_attempt(order, payload_id);
+					}
+					Some(OrderInclusionSuccess(order, payload_id)) = success.next() => {
+						tracing::trace!("order inclusion success: {order} in payload job {payload_id}");
+					}
+					Some(OrderInclusionFailure(order, err, payload_id)) = failure.next() => {
+						tracing::trace!("order inclusion failure: {order} in payload job {payload_id} - {err}");
+						order_pool.report_execution_error(order, &err);
+					}
+					Some(PipelineDropped) = dropped.next() => {
+						// Pipeline was dropped, stop this maintenance task
+						return Ok(());
+					}
+				}
+			}
 		}
 	}
 }

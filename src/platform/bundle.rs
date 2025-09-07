@@ -7,6 +7,7 @@ use {
 		primitives::{B256, Keccak256, TxHash},
 	},
 	core::{
+		cmp::Ordering,
 		convert::Infallible,
 		fmt::Debug,
 		ops::{Deref, DerefMut, Not},
@@ -135,6 +136,29 @@ pub enum Eligibility {
 	/// Once a bundle returns this state, it should never return any other
 	/// eligibility state.
 	PermanentlyIneligible,
+}
+
+impl PartialOrd for Eligibility {
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+		Some(self.cmp(other))
+	}
+}
+
+impl Ord for Eligibility {
+	fn cmp(&self, other: &Self) -> Ordering {
+		use Eligibility::{Eligible, PermanentlyIneligible, TemporarilyIneligible};
+		match (self, other) {
+			(Eligible, Eligible)
+			| (TemporarilyIneligible, TemporarilyIneligible)
+			| (PermanentlyIneligible, PermanentlyIneligible) => Ordering::Equal,
+
+			(Eligible, TemporarilyIneligible | PermanentlyIneligible)
+			| (TemporarilyIneligible, PermanentlyIneligible) => Ordering::Greater,
+
+			(TemporarilyIneligible | PermanentlyIneligible, Eligible)
+			| (PermanentlyIneligible, TemporarilyIneligible) => Ordering::Less,
+		}
+	}
 }
 
 /// This is a quality of life helper that allows users of this api to say:

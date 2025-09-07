@@ -1,6 +1,6 @@
 use {
 	super::*,
-	crate::{alloy, prelude::*, reth},
+	crate::{alloy, pool::OrderPool, prelude::*, reth},
 	alloy::network::TransactionBuilder,
 	core::any::Any,
 	futures::Stream,
@@ -125,6 +125,7 @@ pub struct OneStep<P: PlatformWithRpcTypes> {
 	ok_rx: UnboundedReceiver<Checkpoint<P>>,
 	fail_rx: UnboundedReceiver<PayloadBuilderError>,
 	break_rx: UnboundedReceiver<Checkpoint<P>>,
+	pool: Option<OrderPool<P>>,
 }
 
 impl<P: PlatformWithRpcTypes + TestNodeFactory<P>> OneStep<P> {
@@ -148,7 +149,14 @@ impl<P: PlatformWithRpcTypes + TestNodeFactory<P>> OneStep<P> {
 			ok_rx,
 			fail_rx,
 			break_rx,
+			pool: None,
 		}
+	}
+
+	#[must_use]
+	pub fn with_pool(mut self, pool: &OrderPool<P>) -> Self {
+		self.pool = Some(pool.clone());
+		self
 	}
 
 	#[must_use]
@@ -217,7 +225,11 @@ impl<P: PlatformWithRpcTypes + TestNodeFactory<P>> OneStep<P> {
 	/// Runs a single invocation of the step with the prepared environment and
 	/// returns the control flow result of the step execution.
 	pub async fn run(mut self) -> eyre::Result<ControlFlow<P>> {
-		let local_node = P::create_test_node(self.pipeline).await?;
+		let local_node = match self.pool.take() {
+			Some(pool) => P::create_test_node_with_pool(self.pipeline, pool).await?,
+			None => P::create_test_node(self.pipeline).await?,
+		};
+
 		let input_txs = self
 			.payload_input
 			.into_iter()

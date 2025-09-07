@@ -1,6 +1,6 @@
 use {
 	super::*,
-	crate::{alloy, pool::NativeTransactionPool, prelude::*, reth},
+	crate::{alloy, prelude::*, reth},
 	alloy::{
 		consensus::{BlockHeader, SignableTransaction},
 		eips::{BlockNumberOrTag, Encodable2718},
@@ -109,8 +109,6 @@ where
 		Arc<dyn CanonStateSubscriptions<Primitives = types::Primitives<P>>>,
 	/// The task manager used to manage async tasks in the node.
 	tasks: Option<TaskManager>,
-	/// The transaction pool used by the node.
-	pool: NativeTransactionPool<P>,
 	/// The block time used by the node.
 	block_time: Duration,
 	/// Keeps reth alive, this is used to ensure that the node does not exit
@@ -163,8 +161,6 @@ where
 		let node_handle = node_builder.launch();
 		let node_handle = Box::pin(node_handle).await?;
 
-		let pool = node_handle.node.pool.clone();
-		let pool = NativeTransactionPool::new(Arc::new(pool));
 		let state_provider = Arc::new(node_handle.node.provider.clone());
 		let canon_updates = Arc::new(node_handle.node.provider.clone());
 		let exit_future = node_handle.node_exit_future;
@@ -183,7 +179,6 @@ where
 			consensus,
 			exit_future,
 			config,
-			pool,
 			provider,
 			canon_updates,
 			state_provider,
@@ -232,11 +227,6 @@ where
 		&self,
 	) -> &Arc<dyn CanonStateSubscriptions<Primitives = types::Primitives<P>>> {
 		&self.canon_updates
-	}
-
-	/// Returns a reference to the native transaction pool.
-	pub const fn pool(&self) -> &NativeTransactionPool<P> {
-		&self.pool
 	}
 
 	pub const fn node_handle(&self) -> &Box<dyn Any + Send> {

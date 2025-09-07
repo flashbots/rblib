@@ -32,24 +32,13 @@ pub fn rblib_test(args: TokenStream, input: TokenStream) -> TokenStream {
 	let original_fn = parse_macro_input!(input as ItemFn);
 
 	let original_fn_name = &original_fn.sig.ident;
-	let original_fn_block = &original_fn.block;
 	let original_fn_attrs = &original_fn.attrs;
+	let is_async = original_fn.sig.asyncness.is_some();
 
 	// Determine if the original function returns `eyre::Result<()>`
 	let returns_eyre_result_unit = match &original_fn.sig.output {
 		syn::ReturnType::Default => false,
 		syn::ReturnType::Type(_, ty) => is_eyre_result_unit(ty),
-	};
-
-	// Preserve return type only when it is `eyre::Result<()>`
-	let generic_fn_output = if returns_eyre_result_unit {
-		let ty = match &original_fn.sig.output {
-			syn::ReturnType::Type(_, ty) => ty,
-			_ => unreachable!(),
-		};
-		quote! { -> #ty }
-	} else {
-		quote! {}
 	};
 
 	// Generate test functions for each platform
@@ -60,18 +49,34 @@ pub fn rblib_test(args: TokenStream, input: TokenStream) -> TokenStream {
 			original_fn_name.span(),
 		);
 
-		if returns_eyre_result_unit {
+		if is_async {
+			if returns_eyre_result_unit {
+				quote! {
+						#[tokio::test]
+						async fn #test_fn_name() {
+								#original_fn_name::<#platform>().await.unwrap();
+						}
+				}
+			} else {
+				quote! {
+						#[tokio::test]
+						async fn #test_fn_name() {
+								#original_fn_name::<#platform>().await
+						}
+				}
+			}
+		} else if returns_eyre_result_unit {
 			quote! {
-					#[tokio::test]
-					async fn #test_fn_name() {
-							#original_fn_name::<#platform>().await.unwrap();
+					#[test]
+					fn #test_fn_name() {
+							#original_fn_name::<#platform>().unwrap();
 					}
 			}
 		} else {
 			quote! {
-					#[tokio::test]
-					async fn #test_fn_name() {
-							#original_fn_name::<#platform>().await
+					#[test]
+					fn #test_fn_name() {
+							#original_fn_name::<#platform>();
 					}
 			}
 		}
@@ -80,7 +85,7 @@ pub fn rblib_test(args: TokenStream, input: TokenStream) -> TokenStream {
 	// Generate the original function (made private and generic)
 	let expanded = quote! {
 			#(#original_fn_attrs)*
-			async fn #original_fn_name<P: TestablePlatform>() #generic_fn_output #original_fn_block
+			#original_fn
 
 			#(#test_functions)*
 	};

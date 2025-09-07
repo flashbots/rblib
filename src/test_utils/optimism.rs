@@ -1,11 +1,6 @@
 use {
 	super::*,
-	crate::{
-		alloy,
-		pool::{HostNodeInstaller, OrderPool},
-		prelude::*,
-		reth,
-	},
+	crate::{alloy, pool::OrderPool, prelude::*, reth},
 	alloy::{
 		eips::{BlockNumberOrTag, eip7685::Requests},
 		optimism::{
@@ -26,14 +21,7 @@ use {
 					TX_SET_L1_BLOCK_OP_MAINNET_BLOCK_124665056,
 				},
 			},
-			node::{
-				OpEngineApiBuilder,
-				OpEngineTypes,
-				OpEngineValidatorBuilder,
-				OpNode,
-				OpPayloadAttributes,
-				args::RollupArgs,
-			},
+			node::{OpEngineTypes, OpNode, OpPayloadAttributes, args::RollupArgs},
 			rpc::OpEngineApiClient,
 		},
 		payload::builder::PayloadId,
@@ -57,15 +45,8 @@ impl TestNodeFactory<Optimism> for Optimism {
 				let opnode = OpNode::new(args);
 				builder
 					.with_types::<OpNode>()
-					.with_components(
-						opnode
-							.components()
-							.attach_pool(&pool)
-							.payload(pipeline.into_service()),
-					)
-					.with_add_ons(opnode
-						.add_ons_builder::<types::RpcTypes<Optimism>>()
-						.build::<_, OpEngineValidatorBuilder, OpEngineApiBuilder<OpEngineValidatorBuilder>>())
+					.with_components(opnode.components().payload(pipeline.into_service()))
+					.with_add_ons(opnode.add_ons())
 					.extend_rpc_modules(move |mut rpc_ctx| pool.attach_rpc(&mut rpc_ctx))
 			})
 			.await
@@ -220,3 +201,29 @@ where
 		Ok(block)
 	}
 }
+
+#[macro_export]
+macro_rules! assert_is_sequencer_tx {
+	($tx:expr) => {
+		assert_eq!(
+			rblib::alloy::consensus::Typed2718::ty($tx),
+			rblib::alloy::optimism::consensus::DEPOSIT_TX_TYPE_ID,
+			"Optimism sequencer transaction should be a deposit tx"
+		);
+	};
+}
+
+#[macro_export]
+macro_rules! assert_has_sequencer_tx {
+	($block:expr) => {
+		assert!(
+			rblib::test_utils::BlockResponseExt::tx_count($block) >= 1,
+			"Block should have one transaction"
+		);
+		let sequencer_tx =
+			rblib::test_utils::BlockResponseExt::tx($block, 0).unwrap();
+		$crate::test_utils::assert_is_sequencer_tx!(sequencer_tx);
+	};
+}
+
+pub use {assert_has_sequencer_tx, assert_is_sequencer_tx};

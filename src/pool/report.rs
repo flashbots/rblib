@@ -6,8 +6,8 @@
 
 use {
 	super::*,
-	reth::{node::builder::BlockBody, primitives::SealedBlock},
-	reth_payload_builder::PayloadId,
+	crate::reth,
+	reth::{payload::builder::PayloadId, primitives::SealedBlock},
 	tracing::trace,
 };
 
@@ -20,7 +20,7 @@ impl<P: Platform> OrderPool<P> {
 	/// can be retried later.
 	pub fn report_execution_error(
 		&self,
-		order_hash: B256,
+		order_hash: OrderHash,
 		error: &ExecutionError<P>,
 	) {
 		trace!("order marked as invalid: {order_hash} - {error:?}");
@@ -30,14 +30,14 @@ impl<P: Platform> OrderPool<P> {
 			// future payloads. remove it permanently from the pool so it
 			// won't be attempted again
 			ExecutionError::IneligibleBundle(Eligibility::PermanentlyIneligible) => {
-				self.remove(&order_hash);
+				self.inner.hub.discard(order_hash);
 			}
 
 			ExecutionError::InvalidSignature(_) => {
 				// This order is permanently ineligible for inclusion in this and any
 				// future payloads. remove it permanently from the pool so it
 				// won't be attempted again
-				self.remove(&order_hash);
+				self.inner.hub.discard(order_hash);
 			}
 
 			// TODO: Implement this logic
@@ -49,22 +49,19 @@ impl<P: Platform> OrderPool<P> {
 	/// and there was an attempt to include it in a payload. Once an order was
 	/// proposed once by the pool, it will be removed from the orders list and
 	/// will not be proposed again.
-	pub fn report_inclusion_attempt(&self, _order_hash: B256, _: PayloadId) {
+	pub fn report_inclusion_attempt(&self, _order_hash: OrderHash, _: PayloadId) {
 		// self.remove(&order_hash);
 	}
 
 	/// Signals to the order pool that a block has been committed to the chain.
 	/// This will remove all orders that had any of their transactions included
 	/// in the payload.
-	pub fn report_committed_block(&self, block: &SealedBlock<types::Block<P>>) {
+	pub fn report_committed_block(&self, _block: &SealedBlock<types::Block<P>>) {
 		// remove all orders that had any of their transactions included in the
 		// payload
-		for tx in block.body().transactions() {
-			self.remove_any_with(*tx.tx_hash());
-		}
 
 		// remove all orders that became permanently ineligible
 		// after this block was committed to the chain.
-		self.remove_invalidated_orders(block.sealed_header());
+		todo!()
 	}
 }

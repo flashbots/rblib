@@ -11,10 +11,47 @@ use {
 		tracing::debug,
 		types::{ErrorCode, ErrorObject},
 	},
-	reth::ethereum::primitives::SignedTransaction,
+	reth::{
+		ethereum::primitives::SignedTransaction,
+		node::builder::{FullNodeComponents, rpc::RpcContext},
+		rpc::api::eth::EthApiTypes,
+	},
 	serde::{Deserialize, Serialize},
 	tracing::trace,
 };
+
+impl<P: PlatformWithRpcTypes> OrderPool<P> {
+	/// Installs `OrderPool` RPC methods into a reth node.
+	///
+	/// This method will replace all ethereum api modules that are responsible for
+	/// receiving new transactions and bundles and reporting on their status.
+	///
+	/// This includes:
+	/// - `eth_sendRawTransaction`
+	/// - `eth_sendBundle`
+	///
+	/// Attaching those RPC methods into a reth node will make all transactions
+	/// and bundles received through those methods be inserted into the order pool
+	/// instead of whatever mempool implementation the node is using.
+	pub fn attach_rpc<Node, EthApi>(
+		&self,
+		rpc_ctx: &mut RpcContext<Node, EthApi>,
+	) -> eyre::Result<()>
+	where
+		Node: FullNodeComponents<Types = types::NodeTypes<P>>,
+		EthApi: EthApiTypes,
+	{
+		rpc_ctx
+			.modules
+			.add_or_replace_configured(BundlesRpcApi::new(self).into_rpc())?;
+
+		rpc_ctx
+			.modules
+			.add_or_replace_configured(TransactionsRpcApi::new(self).into_rpc())?;
+
+		Ok(())
+	}
+}
 
 pub(super) struct BundlesRpcApi<P: PlatformWithRpcTypes> {
 	pool: OrderPool<P>,
@@ -47,29 +84,31 @@ impl<P: PlatformWithRpcTypes> BundlesApiServer<P> for BundlesRpcApi<P> {
 		&self,
 		bundle: types::Bundle<P>,
 	) -> RpcResult<BundleResult> {
-		let invalid_param_err = || {
+		let bundle_hash = bundle.hash();
+		trace!(hash = %bundle_hash, "eth_sendBundle received: {bundle:?}");
+
+		let order = Order::Bundle(bundle);
+		let eligibility = self.pool.insert(order).map_err(|e| {
+			debug!(
+				error = %e, bundle = %bundle_hash,
+				"Failed to insert bundle into pool"
+			);
+
 			ErrorObject::borrowed(
+				ErrorCode::InternalError.code(),
+				"Internal Error",
+				None,
+			)
+		})?;
+
+		if eligibility == Eligibility::PermanentlyIneligible {
+			return Err(ErrorObject::borrowed(
 				ErrorCode::InvalidParams.code(),
 				"bundle is ineligible for inclusion",
 				None,
-			)
-		};
-
-		// empty bundles are never valid
-		if bundle.transactions().is_empty() {
-			return Err(invalid_param_err());
+			));
 		}
 
-		// If we can tell that the bundle is permanently ineligible for inclusion in
-		// any future block, we reject it immediately without adding it to the
-		// pool.
-		if self.pool.is_permanently_ineligible(&bundle) {
-			return Err(invalid_param_err());
-		}
-
-		let bundle_hash = bundle.hash();
-		trace!(hash = %bundle_hash, "eth_sendBundle received: {bundle:?}");
-		self.pool.insert(Order::Bundle(bundle));
 		Ok(BundleResult { bundle_hash })
 	}
 }
@@ -111,7 +150,7 @@ impl<P: PlatformWithRpcTypes> TransactionsApiServer<P>
 			})?;
 
 		let tx: types::Transaction<P> = decoded.into();
-		let rtx = tx
+		let tx = tx
 			.try_into_recovered()
 			.inspect_err(|tx| {
 				debug!(tx = ?tx, "eth_sendRawTransaction: invalid signature");
@@ -124,9 +163,30 @@ impl<P: PlatformWithRpcTypes> TransactionsApiServer<P>
 				)
 			})?;
 
-		let txhash = *rtx.tx_hash();
-		self.pool.insert(Order::Transaction(rtx));
+		let order = Order::Transaction(tx);
+		let order_hash = order.hash();
 
-		Ok(txhash)
+		let eligibility = self.pool.insert(order).map_err(|e| {
+			debug!(
+				error = %e, tx = %order_hash,
+				"Failed to insert transaction into pool"
+			);
+
+			ErrorObject::borrowed(
+				ErrorCode::InternalError.code(),
+				"Internal Error",
+				None,
+			)
+		})?;
+
+		if eligibility == Eligibility::PermanentlyIneligible {
+			return Err(ErrorObject::borrowed(
+				ErrorCode::InvalidParams.code(),
+				"transaction is ineligible for inclusion",
+				None,
+			));
+		}
+
+		Ok(order_hash)
 	}
 }

@@ -1,32 +1,15 @@
-//! Order pool
+use {crate::prelude::*, hub::Hub, std::sync::Arc};
 
-use {
-	crate::{alloy, prelude::*, reth},
-	alloy::{
-		consensus::crypto::RecoveryError,
-		primitives::{B256, TxHash},
-	},
-	dashmap::{DashMap, DashSet},
-	reth::{
-		ethereum::primitives::SignedTransaction,
-		primitives::{Recovered, SealedHeader},
-	},
-	std::sync::Arc,
-	tokio::sync::broadcast,
-};
-
+mod canon;
 mod config;
+mod deps;
 mod filter;
-mod host;
-mod insert;
-mod maintain;
-mod native;
+mod hub;
 mod order;
 mod pipeline;
 mod report;
 mod rpc;
 mod score;
-mod setup;
 mod stream;
 
 #[cfg(test)]
@@ -34,9 +17,10 @@ mod tests;
 
 // Order Pool public API
 pub use {
+	canon::CanonicalStateSource,
 	config::Config,
 	filter::*,
-	order::Order,
+	order::{Order, OrderHash, PooledOrder},
 	pipeline::{
 		AppendOrders,
 		OrderInclusionAttempt,
@@ -44,11 +28,10 @@ pub use {
 		OrderInclusionSuccess,
 	},
 	rpc::{BundleResult, BundlesApiClient},
-	setup::HostNodeInstaller,
 };
 
 /// Implements an order pool that handles mempool operations for transactions
-/// and bundles.
+/// and bundles and their public RPC interfaces.
 ///
 /// Notes:
 ///
@@ -57,20 +40,29 @@ pub use {
 ///
 ///  - This type is referenced by steps and RPC modules when constructing a
 ///    pipeline and Reth node.
+///
+///  - Attaching the `OrderPool` to a Reth instance is done like this:
+/// 	 ```rust
+/// 	  let pool = OrderPool::default();
+/// 		builder
+/// 			.with_types::<OpNode>()
+/// 			.with_components(..)
+/// 			.with_add_ons(..)
+/// 			.extend_rpc_modules(move |mut ctx| pool.attach_reth(&mut ctx))
+/// 			.launch()
+/// 		```
 pub struct OrderPool<P: Platform> {
 	inner: Arc<OrderPoolInner<P>>,
 }
 
+/// Public API
 impl<P: Platform> OrderPool<P> {
-	/// Returns true if the order pool knows for sure that the bundle will never
-	/// be eligible for inclusion in any block. This check requires the order pool
-	/// to be attached to a host Reth node, otherwise it always returns false.
-	pub fn is_permanently_ineligible(&self, bundle: &types::Bundle<P>) -> bool {
-		self
-			.inner
-			.host
-			.map_tip_header(|header| bundle.is_permanently_ineligible(header))
-			.unwrap_or(false)
+	/// Adds a new order to the order pool.
+	///
+	/// First the order is sent to the `Hub`, which then distributes it to all
+	/// active `OrderStream`s and adds it to its internal pending list of orders.
+	pub fn insert(&self, order: Order<P>) -> eyre::Result<Eligibility> {
+		self.inner.hub.insert(order)
 	}
 }
 
@@ -82,36 +74,61 @@ impl<P: Platform> Clone for OrderPool<P> {
 	}
 }
 
+/// Internal API
+impl<P: Platform> OrderPool<P> {
+	fn hub(&self) -> &Hub<P> {
+		&self.inner.hub
+	}
+}
+
 struct OrderPoolInner<P: Platform> {
 	/// Set during `OrderPool` construction.
-	config: Config<P>,
+	config: Arc<Config<P>>,
 
-	orders: DashMap<B256, Order<P>>,
+	/// This is the central hub for all incoming orders. They first make their
+	/// way to the hub, which then distributes them to the appropriate sinks.
+	hub: Hub<P>,
 
-	/// A map that keeps track of transaction hashes and orders that contain
-	/// them.
-	txmap: DashMap<TxHash, DashSet<B256>>,
-
-	/// A channel that broadcasts new incoming orders to all active sinks.
-	fanout: broadcast::Sender<Arc<Order<P>>>,
-
-	/// The host Reth node that this order pool is attached to.
-	/// Attachment is done by the `attach_pool` method during node components
-	host: Arc<host::HostNode<P>>,
+	/// Responsible for keeping the `OrderPool` up to date with the latest
+	/// canonical state of the chain.
+	canonical: Option<CanonicalStateSource<P>>,
 }
 
 impl<P: Platform> OrderPoolInner<P> {
-	pub fn new(config: Config<P>) -> Self {
+	pub fn new(config: Config<P>, canonical: CanonicalStateSource<P>) -> Self {
+		let config = Arc::new(config);
+		let hub = Hub::new(Arc::clone(&config));
+
 		Self {
-			orders: DashMap::new(),
-			txmap: DashMap::new(),
-			host: Arc::new(host::HostNode::default()),
-			fanout: broadcast::Sender::new(config.inflight_backlog_capacity),
 			config,
+			hub,
+			canonical: Some(canonical),
 		}
 	}
 
-	pub const fn config(&self) -> &Config<P> {
+	pub fn with_config(config: Config<P>) -> Self {
+		let config = Arc::new(config);
+		let hub = Hub::new(Arc::clone(&config));
+
+		Self {
+			config,
+			hub,
+			canonical: None,
+		}
+	}
+
+	pub fn with_state_source(canonical: CanonicalStateSource<P>) -> Self {
+		let config = Arc::new(Config::default());
+		let hub = Hub::new(Arc::clone(&config));
+
+		Self {
+			config,
+			hub,
+			canonical: Some(canonical),
+		}
+	}
+
+	pub fn config(&self) -> &Config<P> {
 		&self.config
 	}
 }
@@ -129,6 +146,3 @@ impl<P: Platform> From<Arc<OrderPoolInner<P>>> for OrderPool<P> {
 		inner.outer()
 	}
 }
-
-#[cfg(feature = "test-utils")]
-pub use native::NativeTransactionPool;

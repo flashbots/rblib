@@ -110,6 +110,7 @@ serde = "1.0"
 jsonrpsee = "0.25.1"
 parking_lot = "0.12"
 metrics = "0.24.0"
+arc-swap = "1.7"
 
 alloy-origin = { version = "1.0.27", package = "alloy", features = [
   "k256",

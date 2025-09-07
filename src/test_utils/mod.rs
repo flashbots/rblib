@@ -37,7 +37,11 @@ pub use {
 mod optimism;
 
 #[cfg(feature = "optimism")]
-pub use optimism::OptimismConsensusDriver;
+pub use optimism::{
+	OptimismConsensusDriver,
+	assert_has_sequencer_tx,
+	assert_is_sequencer_tx,
+};
 
 pub const ONE_ETH: u128 = 1_000_000_000_000_000_000;
 pub const TEST_COINBASE: crate::alloy::primitives::Address = //
@@ -79,7 +83,7 @@ fn init_test_logging() {
 			"providers::db",
 		];
 
-		tracing_subscriber::registry()
+		let _ = tracing_subscriber::registry()
 			.with(tracing_subscriber::fmt::layer())
 			.with(filter_fn(move |metadata| {
 				metadata.level() <= &level
@@ -87,6 +91,6 @@ fn init_test_logging() {
 						.iter()
 						.any(|prefix| metadata.target().starts_with(prefix))
 			}))
-			.init();
+			.try_init();
 	}
 }

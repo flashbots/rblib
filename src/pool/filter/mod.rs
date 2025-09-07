@@ -1,7 +1,13 @@
-use {super::*, core::fmt::Debug, reth::providers::StateProvider};
+use {
+	super::*,
+	crate::reth,
+	core::fmt::Debug,
+	reth::{primitives::SealedHeader, providers::StateProvider},
+};
 
 mod balance;
 mod base_fee;
+mod basic;
 mod bundle;
 mod max_gas;
 mod nonce;
@@ -9,6 +15,7 @@ mod nonce;
 pub use {
 	balance::SignerBalanceFilter,
 	base_fee::BaseFeeFilter,
+	basic::BasicFilter,
 	bundle::BundleFilter,
 	max_gas::MaxGasPerSenderFilter,
 	nonce::NonceFilter,
@@ -18,6 +25,21 @@ pub use {
 /// pool. They decide whether an order should be kept or discarded from the pool
 /// and if it should be presented by order streams.
 pub trait OrderFilter<P: Platform>: Debug + Sync + Send + 'static {
+	/// Decides whether an order is eligible for inclusion using only static
+	/// checks without access to the chain state.
+	///
+	/// This is intended for semantic validations of the order that can be done by
+	/// only looking at the order itself, such as checking if max gas is not less
+	/// than the intrinsic gas, etc.
+	///
+	/// Results of intrinsic checks should never change over time, so if an order
+	/// is deemed eligible once at this level, it should always be eligible.
+	///
+	/// Return true if the order passes the intrinsic checks, false otherwise.
+	fn intrinsic(&self, _: &Order<P>) -> bool {
+		true
+	}
+
 	/// Decides whether an order is eligible for inclusion in the order pool.
 	///
 	/// If this function returns `PermanentlyIneligible` then the given order will
@@ -31,7 +53,8 @@ pub trait OrderFilter<P: Platform>: Debug + Sync + Send + 'static {
 	/// state and try to err on the side of caution with marking orders as
 	/// permanently ineligible.
 	///
-	/// This is called periodically when the chain advances to new blocks.
+	/// This is called periodically when the chain advances to new blocks. At this
+	/// stage eligibility may change over time as the chain state changes.
 	fn global(
 		&self,
 		_: &dyn StateProvider,
@@ -66,5 +89,39 @@ pub trait OrderFilter<P: Platform>: Debug + Sync + Send + 'static {
 		_: &Order<P>,
 	) -> eyre::Result<Eligibility> {
 		Ok(Eligibility::Eligible)
+	}
+}
+
+/// Applies all configured filters to an order and returns the lowest
+/// eligibility result. It shortcircuits and returns early if any filter
+/// returns `PermanentlyIneligible`.
+pub(super) struct Filters<'a, P: Platform>(&'a Config<P>);
+
+impl<'a, P: Platform> Filters<'a, P> {
+	pub fn of(config: &'a Config<P>) -> Self {
+		Self(config)
+	}
+
+	pub fn intrinsic(&self, order: &Order<P>) -> bool {
+		self.0.filters.iter().all(|f| f.intrinsic(order))
+	}
+
+	pub fn global(
+		&self,
+		state: &dyn StateProvider,
+		header: &SealedHeader<types::Header<P>>,
+		order: &Order<P>,
+	) -> eyre::Result<Eligibility> {
+		let mut eligibility = Eligibility::Eligible;
+
+		for filter in &self.0.filters {
+			eligibility = eligibility.min(filter.global(state, header, order)?);
+
+			if eligibility == Eligibility::PermanentlyIneligible {
+				return Ok(eligibility);
+			}
+		}
+
+		Ok(eligibility)
 	}
 }

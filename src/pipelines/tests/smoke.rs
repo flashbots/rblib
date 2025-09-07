@@ -6,7 +6,7 @@ use {
 			optimism::consensus::DEPOSIT_TX_TYPE_ID,
 			primitives::U256,
 		},
-		pool::{HostNodeInstaller, OrderPool},
+		pool::OrderPool,
 		prelude::*,
 		reth::{
 			cli::Cli,
@@ -203,9 +203,7 @@ async fn reth_minimal_integration_example() {
 			let handle = builder
 				.with_types::<EthereumNode>()
 				.with_components(
-					EthereumNode::components()
-						.attach_pool(&pool)
-						.payload(pipeline.into_service()),
+					EthereumNode::components().payload(pipeline.into_service()),
 				)
 				.with_add_ons(EthereumAddOns::default())
 				.extend_rpc_modules(move |mut ctx| pool.attach_rpc(&mut ctx))
