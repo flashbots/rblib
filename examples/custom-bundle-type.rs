@@ -32,7 +32,6 @@ impl Platform for CustomPlatform {
 	type DefaultLimits = types::DefaultLimits<Optimism>;
 	type EvmConfig = types::EvmConfig<Optimism>;
 	type NodeTypes = types::NodeTypes<Optimism>;
-	type PooledTransaction = types::PooledTransaction<Optimism>;
 
 	fn evm_config<P>(
 		chainspec: Arc<types::ChainSpec<Optimism>>,

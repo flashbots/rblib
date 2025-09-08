@@ -31,7 +31,6 @@ impl Platform for Optimism {
 	type DefaultLimits = OptimismDefaultLimits;
 	type EvmConfig = OpEvmConfig;
 	type NodeTypes = OpNode;
-	type PooledTransaction = OpPooledTransaction;
 
 	fn evm_config<P>(
 		chainspec: std::sync::Arc<types::ChainSpec<P>>,

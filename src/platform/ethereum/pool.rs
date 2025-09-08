@@ -6,6 +6,7 @@ use {
 			primitives::Recovered,
 			transaction_pool::{
 				BestTransactions,
+				EthPooledTransaction,
 				PoolTransaction,
 				TransactionOrigin,
 				ValidPoolTransaction,
@@ -38,7 +39,11 @@ impl<P: Platform> FixedTransactions<P> {
 	}
 }
 
-impl<P: Platform> BestTransactions for FixedTransactions<P> {
+impl<P: Platform> BestTransactions for FixedTransactions<P>
+where
+	EthPooledTransaction<types::Transaction<P>>:
+		PoolTransaction<Consensus = types::Transaction<P>>,
+{
 	fn no_updates(&mut self) {}
 
 	fn set_skip_blobs(&mut self, _: bool) {}
@@ -57,14 +62,22 @@ impl<P: Platform> BestTransactions for FixedTransactions<P> {
 	}
 }
 
-impl<P: Platform> Iterator for FixedTransactions<P> {
-	type Item = Arc<ValidPoolTransaction<P::PooledTransaction>>;
+impl<P: Platform> Iterator for FixedTransactions<P>
+where
+	EthPooledTransaction<types::Transaction<P>>:
+		PoolTransaction<Consensus = types::Transaction<P>>,
+{
+	type Item =
+		Arc<ValidPoolTransaction<EthPooledTransaction<types::Transaction<P>>>>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		loop {
 			let transaction = self.txs.pop()?;
 
-			let Ok(pooled) = P::PooledTransaction::try_from_consensus(transaction)
+			let Ok(pooled) =
+				EthPooledTransaction::<types::Transaction<P>>::try_from_consensus(
+					transaction,
+				)
 			else {
 				unreachable!("Transaction should be valid at this point");
 			};

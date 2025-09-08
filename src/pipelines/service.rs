@@ -14,6 +14,7 @@ use {
 			},
 			payload::builder::{PayloadBuilderHandle, PayloadBuilderService, *},
 			providers::{CanonStateSubscriptions, StateProviderFactory},
+			transaction_pool::TransactionPool,
 		},
 	},
 	std::sync::Arc,
@@ -40,7 +41,7 @@ impl<Plat, Node, Pool> PayloadServiceBuilder<Node, Pool, types::EvmConfig<Plat>>
 where
 	Plat: Platform,
 	Node: traits::NodeBounds<Plat>,
-	Pool: traits::PoolBounds<Plat>,
+	Pool: TransactionPool,
 {
 	async fn spawn_payload_builder_service(
 		self,

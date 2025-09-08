@@ -1,7 +1,121 @@
 //! This module implements nonce-signer dependency trakcing for orders in the
 //! pool.
 
-use {super::*, crate::alloy::primitives::Address, std::collections::HashMap};
+use {
+	super::*,
+	crate::alloy::primitives::Address,
+	dashmap::DashMap,
+	std::collections::HashMap,
+};
+
+/// This structure holds all orders in the pool, organized by their nonce
+/// dependencies. It is responsible for identifying inter-order dependencies and
+/// managing their proposal order.
+///
+/// Conceptually it is a directed graph of inter-order dependencies, where each
+/// connected component forms a distinct `OrderGroup`. Independent orders are
+/// their own groups of one.
+#[derive(Default)]
+pub struct OrderGraph<P: Platform> {
+	/// Mapping from a signer address to its membership in an `OrderGroup`.
+	///
+	/// A signer can be at most in one `OrderGroup` at a time. If a new order
+	/// arrives that shares signers with multiple groups, those groups are
+	/// merged.
+	///
+	/// If an order leaves the pool and partitions an order group into multiple
+	/// disconnected components, the components are split into separate groups.
+	by_signer: DashMap<Address, OrderGroup<P>>,
+}
+
+/// This structure represents a collection of orders that have nonce
+/// dependencies and must be executed in a specific order with relation to each
+/// other.
+///
+/// Common examples of orders that belong to one set are:
+/// - Transactions from the same signer.
+/// - Transactions from the same signer with replacement transactions.
+/// - Bundles with backruns of the target transaction.
+/// - A list of user transactions + a bundle that backruns one of them.
+/// - An arbitrary combination of the above or bundles that share signers.
+/// - etc.
+pub struct OrderGroup<P: Platform>(OrderGroupInner<P>);
+
+impl<P: Platform> OrderGroup<P> {
+	/// Initialize a new order graph with one order at its root.
+	pub fn new(order: PooledOrder<P>) -> Self {
+		Self(OrderGroupInner::Single(order))
+	}
+
+	/// Returns the number of orders in this group.
+	pub fn len(&self) -> usize {
+		match &self.0 {
+			OrderGroupInner::Single(_) => 1,
+			OrderGroupInner::Linear(orders) => orders.len(),
+			OrderGroupInner::Graph { orders, .. } => orders.len(),
+		}
+	}
+
+	/// Inserts a new order into this group.
+	pub fn insert(&mut self, _order: Order<P>) -> InsertionResult {
+		todo!("insert order into group");
+	}
+}
+
+pub enum InsertionResult {
+	/// The order was already present in the group.
+	Exists,
+
+	/// The order was successfully inserted into the group but it has not changed
+	/// the group's signers list. This variant is returned in two cases:
+	/// - When an order with one signer is inserted into a `Single` group and it
+	///   is promoted to a `Linear` group.
+	/// - When an order with a single signer is inserted into a `Linear` group
+	///   keeping all order relations linear. No promotion to `Graph` is needed.
+	Inserted,
+
+	/// The order was successfully inserted into the group and it has changed the
+	/// group's signers list. This is an indication that the group might need to
+	/// be merged with other groups that share signers with it.
+	///
+	/// This happens when an order with multiple signers is inserted into any
+	/// variant and it introduces new signers.
+	///
+	/// The returned list contains all signers that were newly added to the
+	/// group's signers list. Signers from this list should be used to look up
+	/// other groups and if any are found, they should be merged with this group.
+	SignersExpanded(Vec<Address>),
+}
+
+/// The internal representation of an order group.
+///
+/// In theory we could represent all order groups as a graph, but here we
+/// optimize for the common cases of single independent orders and linear chains
+/// of orders as they are much cheaper to manage than a full graph structure.
+enum OrderGroupInner<P: Platform> {
+	/// This order group contains only one independent order.
+	Single(PooledOrder<P>),
+
+	/// This order group contains orders that have only one signer and strictly
+	/// increasing nonces, forming a linear chain of dependencies. Nonce
+	/// dependencies between orders in this variant can only be `Ancestor` or
+	/// `Descendant`. We might have nonce gaps between orders, but there are no
+	/// cycles or mutually exclusive orders.
+	///
+	/// If a new order arrives that has more than one signer and shares a signer
+	/// with this linear group, it is promoted to a `Graph` variant.
+	Linear(im::Vector<PooledOrder<P>>),
+
+	/// This order group contains orders that have multiple signers in common and
+	/// have complex nonce dependencies. This includes mutually exclusive orders
+	/// (such as transactions and bundles with their backruns). Nonce dependencies
+	/// between orders in this graph can be any of the variants of
+	/// `NonceRelation`.
+	Graph {
+		orders: im::HashSet<OrderHash, PooledOrder<P>>,
+		edges: im::HashMap<OrderHash, im::Vector<(OrderHash, NonceRelation)>>,
+	},
+}
 
 /// Computes the nonce dependency relation between two orders (left, right).
 ///
@@ -31,7 +145,6 @@ pub fn nonce_relation<P: Platform>(
 	left: &Order<P>,
 	right: &Order<P>,
 ) -> NonceRelation {
-	#[derive(Clone, Copy)]
 	struct Entry {
 		l_min: u64,
 		l_max: u64,

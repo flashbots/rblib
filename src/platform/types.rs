@@ -43,10 +43,6 @@ pub type PayloadBuilderAttributes<P: Platform> =
 pub type Transaction<P: Platform> =
 	<Primitives<P> as reth::api::NodePrimitives>::SignedTx;
 
-/// Extracts the type that represents a transaction that is in the transaction
-/// pool.
-pub type PooledTransaction<P: Platform> = P::PooledTransaction;
-
 /// Extracts the type that represents an atomic bundle of transactions.
 pub type Bundle<P: Platform> = P::Bundle;
 

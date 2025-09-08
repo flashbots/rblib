@@ -1,41 +1,36 @@
 use {
 	super::{order::PooledOrder, *},
+	crate::pool::graph::OrderGraph,
 	arc_swap::ArcSwapOption,
 	canon::CanonicalState,
-	dashmap::DashSet,
 	tokio::sync::broadcast::{self},
 };
 
 pub struct Hub<P: Platform> {
 	config: Arc<Config<P>>,
-	limbo: Limbo<P>,
-	ready: Ready<P>,
+
+	orders: OrderGraph<P>,
+
+	/// Broadcast channel to notify subscribers of new orders.
 	fanout: broadcast::Sender<PooledOrder<P>>,
+
+	/// The latest canonical state source that is used for eligibility
+	/// checks.
 	latest: ArcSwapOption<CanonicalState<P>>,
 }
 
 impl<P: Platform> Hub<P> {
 	pub fn new(config: Arc<Config<P>>) -> Self {
-		let fanout = broadcast::Sender::new(config.inflight_backlog_capacity);
 		Self {
-			config,
-			fanout,
-			limbo: Limbo::default(),
-			ready: Ready::default(),
+			orders: OrderGraph::default(),
 			latest: ArcSwapOption::empty(),
+			fanout: broadcast::Sender::new(config.inflight_backlog_capacity),
+			config,
 		}
 	}
 
 	pub fn subscribe(&self) -> broadcast::Receiver<PooledOrder<P>> {
 		self.fanout.subscribe()
-	}
-
-	pub const fn ready(&self) -> &Ready<P> {
-		&self.ready
-	}
-
-	pub const fn limbo(&self) -> &Limbo<P> {
-		&self.limbo
 	}
 }
 
@@ -55,51 +50,24 @@ impl<P: Platform> Hub<P> {
 		let Some(chain_state) = chain_state.as_ref() else {
 			// Can't run eligibility checks without chain state, so we
 			// optimistically accept the order for now as ready.
-			self.ready.insert(order.into());
-			return Ok(Eligibility::Eligible);
+			todo!("insert ready order");
 		};
 
-		match Filters::of(&self.config).global(
+		let eligibility = match Filters::of(&self.config).global(
 			&chain_state.state,
 			&chain_state.header,
 			&order,
 		)? {
-			Eligibility::Eligible => self.ready.insert(order.into()),
-			Eligibility::TemporarilyIneligible => self.limbo.insert(order.into()),
+			e @ (Eligibility::Eligible | Eligibility::TemporarilyIneligible) => e,
 			Eligibility::PermanentlyIneligible => {
 				return Ok(Eligibility::PermanentlyIneligible);
 			}
-		}
+		};
 
-		Ok(Eligibility::Eligible)
+		Ok(eligibility)
 	}
 
 	pub fn discard(&self, order_hash: OrderHash) {
 		todo!("discard order {order_hash}");
-	}
-}
-
-/// Holds temporarily ineligible orders that might become eligible later.
-#[derive(Debug, Default)]
-pub struct Limbo<P: Platform> {
-	orders: Vec<PooledOrder<P>>,
-}
-
-impl<P: Platform> Limbo<P> {
-	pub fn insert(&self, _order: PooledOrder<P>) {}
-}
-
-#[derive(Debug, Default)]
-pub struct Ready<P: Platform> {
-	orders: DashSet<PooledOrder<P>>,
-}
-
-impl<P: Platform> Ready<P> {
-	pub fn insert(&self, order: PooledOrder<P>) {
-		self.orders.insert(order);
-	}
-
-	pub fn snapshot(&self) -> Vec<PooledOrder<P>> {
-		self.orders.iter().map(|o| o.clone()).collect()
 	}
 }

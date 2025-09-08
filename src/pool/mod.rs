@@ -2,8 +2,8 @@ use {crate::prelude::*, hub::Hub, std::sync::Arc};
 
 mod canon;
 mod config;
-mod deps;
 mod filter;
+mod graph;
 mod hub;
 mod order;
 mod pipeline;

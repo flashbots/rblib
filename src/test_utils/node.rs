@@ -142,7 +142,7 @@ where
 			) -> WithLaunchContext<NodeBuilderWithComponents<T, CB, AO>>,
 		T: FullNodeTypes<Types = P::NodeTypes>,
 		CB: NodeComponentsBuilder<T>,
-		CB::Components: NodeComponents<T, Pool: traits::PoolBounds<P>>,
+		CB::Components: NodeComponents<T>,
 		AO: RethRpcAddOns<NodeAdapter<T, CB::Components>> + 'static,
 		EngineNodeLauncher: LaunchNode<
 				NodeBuilderWithComponents<T, CB, AO>,

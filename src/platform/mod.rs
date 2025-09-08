@@ -70,11 +70,6 @@ pub trait Platform:
 			NextBlockEnvCtx: Send + Sync + 'static,
 		>;
 
-	/// Type that represents transactions that are inside the transaction pool.
-	type PooledTransaction: reth::transaction_pool::EthPoolTransaction<
-			Consensus = types::Transaction<Self>,
-		>;
-
 	/// Type that configures how bundles are represented and handled by the
 	/// platform.
 	type Bundle: Bundle<Self>;

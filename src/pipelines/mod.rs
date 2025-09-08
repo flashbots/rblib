@@ -3,7 +3,13 @@
 //! This API is used to construct payload builders workflows.
 
 use {
-	crate::{prelude::*, reth::builder::components::PayloadServiceBuilder},
+	crate::{
+		prelude::*,
+		reth::{
+			builder::components::PayloadServiceBuilder,
+			transaction_pool::TransactionPool,
+		},
+	},
 	core::{any::Any, fmt::Display, panic::Location},
 	events::EventsBus,
 	exec::navi::StepPath,
@@ -141,7 +147,7 @@ impl<P: Platform> Pipeline<P> {
 	) -> impl PayloadServiceBuilder<Node, Pool, types::EvmConfig<P>>
 	where
 		Node: traits::NodeBounds<P>,
-		Pool: traits::PoolBounds<P>,
+		Pool: TransactionPool,
 	{
 		service::PipelineServiceBuilder::new(self)
 	}
@@ -329,7 +335,6 @@ pub mod traits {
 			api::FullNodeTypes,
 			evm::ConfigureEvm,
 			providers::{ChainSpecProvider, HeaderProvider, StateProviderFactory},
-			transaction_pool::{PoolTransaction, TransactionPool},
 		},
 	};
 
@@ -362,21 +367,6 @@ pub mod traits {
 			+ Send
 			+ Sync
 			+ 'static
-	{
-	}
-
-	pub trait PoolBounds<P: Platform>:
-		TransactionPool<Transaction = P::PooledTransaction> + Unpin + 'static
-	{
-	}
-
-	impl<T, P: Platform> PoolBounds<P> for T where
-		T: TransactionPool<Transaction = P::PooledTransaction> + Unpin + 'static
-	{
-	}
-
-	pub trait PooledTransactionBounds<P: Platform>:
-		PoolTransaction<Consensus = types::Transaction<P>> + Send + Sync + 'static
 	{
 	}
 

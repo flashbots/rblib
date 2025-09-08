@@ -25,7 +25,6 @@ use {
 				states::bundle_state::BundleRetention,
 			},
 		},
-		transaction_pool::PoolTransaction,
 	},
 	std::fmt::Debug,
 };
@@ -312,17 +311,6 @@ impl<P: Platform> IntoExecutable<P, Variant<0>> for types::Transaction<P> {
 		SignedTransaction::try_into_recovered(self)
 			.map(Executable::Transaction)
 			.map_err(|_| RecoveryError::new())
-	}
-}
-
-/// Transactions from the transaction pool can be converted infalliably into
-/// an executable because the transaction pool discards transactions
-/// that have invalid signatures.
-impl<P: Platform> IntoExecutable<P, Variant<1>>
-	for types::PooledTransaction<P>
-{
-	fn try_into_executable(self) -> Result<Executable<P>, RecoveryError> {
-		Ok(Executable::Transaction(self.into_consensus()))
 	}
 }
 

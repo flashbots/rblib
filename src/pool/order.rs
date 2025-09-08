@@ -5,7 +5,6 @@ use {
 		consensus::{Transaction, crypto::RecoveryError},
 		primitives::{Address, B256},
 	},
-	dashmap::DashSet,
 	derive_more::Deref,
 	reth::{ethereum::primitives::SignedTransaction, primitives::Recovered},
 };
@@ -62,6 +61,12 @@ impl<P: Platform> Order<P> {
 #[derive(Debug, Clone, Deref)]
 pub struct PooledOrder<P: Platform>(Arc<PooledOrderInner<P>>);
 
+impl<P: Platform> PooledOrder<P> {
+	pub fn hash(&self) -> OrderHash {
+		self.0.hash
+	}
+}
+
 impl<P: Platform> PartialEq for PooledOrder<P> {
 	fn eq(&self, other: &Self) -> bool {
 		self.hash == other.hash
@@ -91,7 +96,6 @@ impl<P: Platform> PooledOrder<P> {
 	pub fn new(order: Order<P>) -> Self {
 		Self(Arc::new(PooledOrderInner {
 			hash: order.hash(),
-			next: DashSet::new(),
 			order,
 		}))
 	}
@@ -101,6 +105,5 @@ impl<P: Platform> PooledOrder<P> {
 pub struct PooledOrderInner<P: Platform> {
 	#[deref]
 	pub order: Order<P>,
-	pub next: DashSet<PooledOrder<P>>,
 	pub hash: OrderHash,
 }

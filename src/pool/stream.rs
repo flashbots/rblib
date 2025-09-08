@@ -20,7 +20,6 @@ use {
 pub struct OrdersStream<P: Platform> {
 	block: BlockContext<P>,
 	receiver: BroadcastStream<PooledOrder<P>>,
-	pending: Vec<PooledOrder<P>>,
 }
 
 impl<P: Platform> OrdersStream<P> {
@@ -29,7 +28,6 @@ impl<P: Platform> OrdersStream<P> {
 		Self {
 			block: block.clone(),
 			receiver: pool.hub().subscribe().into(),
-			pending: pool.hub().ready().snapshot(),
 		}
 	}
 }
@@ -42,10 +40,6 @@ impl<P: Platform> Stream for OrdersStream<P> {
 		cx: &mut Context<'_>,
 	) -> Poll<Option<Self::Item>> {
 		let this = self.get_mut();
-		if let Some(order) = this.pending.pop() {
-			return Poll::Ready(Some(order));
-		}
-
 		match this.receiver.poll_next_unpin(cx) {
 			Poll::Ready(Some(Ok(order))) => Poll::Ready(Some(order)),
 			Poll::Ready(Some(Err(BroadcastStreamRecvError::Lagged(n)))) => {

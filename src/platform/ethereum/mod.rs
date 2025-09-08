@@ -29,7 +29,6 @@ impl Platform for Ethereum {
 	type DefaultLimits = EthereumDefaultLimits;
 	type EvmConfig = EthEvmConfig;
 	type NodeTypes = EthereumNode;
-	type PooledTransaction = EthPooledTransaction;
 
 	fn evm_config<P>(chainspec: Arc<types::ChainSpec<Self>>) -> Self::EvmConfig {
 		EthEvmConfig::new(chainspec)
@@ -88,7 +87,7 @@ impl Platform for Ethereum {
 				transactions
 					as Box<
 						dyn BestTransactions<
-							Item = Arc<ValidPoolTransaction<Self::PooledTransaction>>,
+							Item = Arc<ValidPoolTransaction<EthPooledTransaction>>,
 						>,
 					>
 			},
