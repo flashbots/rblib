@@ -1,5 +1,5 @@
 use {
-	super::{OrderBy, OrderScore},
+	super::{CheckpointScore, OrderBy},
 	crate::{alloy, prelude::*},
 	alloy::primitives::U256,
 	core::marker::PhantomData,
@@ -9,7 +9,7 @@ use {
 #[derive(Debug, Clone, Default)]
 pub struct CoinbaseProfitScore<P: Platform>(PhantomData<P>);
 
-impl<P: Platform> OrderScore<P> for CoinbaseProfitScore<P> {
+impl<P: Platform> CheckpointScore<P> for CoinbaseProfitScore<P> {
 	type Error = ProviderError;
 	type Score = U256;
 

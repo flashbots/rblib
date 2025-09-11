@@ -43,7 +43,7 @@ pub trait CheckpointExt<P: Platform>: super::sealed::Sealed {
 	}
 
 	/// Returns the effective tip for this transaction.
-	fn effective_tip_per_gas(&self) -> u128;
+	fn min_effective_tip_per_gas(&self) -> u128;
 
 	/// If this checkpoint was created by applying a blob transaction,
 	/// returns the blob gas used by the blob transaction, `None` otherwise.
@@ -154,13 +154,15 @@ impl<P: Platform> CheckpointExt<P> for Checkpoint<P> {
 		self.result().map_or(0, |result| result.gas_used())
 	}
 
-	/// Returns the sum of effective tips for transactions in this checkpoint.
-	fn effective_tip_per_gas(&self) -> u128 {
+	/// Returns the lowest effective tip per gas for transactions in this
+	/// checkpoint
+	fn min_effective_tip_per_gas(&self) -> u128 {
 		self
 			.transactions()
 			.iter()
 			.filter_map(|tx| tx.effective_tip_per_gas(self.block().base_fee()))
-			.sum()
+			.min()
+			.unwrap_or_default()
 	}
 
 	/// If this checkpoint has EIP-4844 blob transactions,

@@ -1,5 +1,5 @@
 use {
-	super::{OrderBy, OrderScore},
+	super::{CheckpointScore, OrderBy},
 	crate::prelude::*,
 	core::{convert::Infallible, marker::PhantomData},
 };
@@ -7,12 +7,12 @@ use {
 #[derive(Debug, Clone, Default)]
 pub struct PriorityFeeScore<P: Platform>(PhantomData<P>);
 
-impl<P: Platform> OrderScore<P> for PriorityFeeScore<P> {
+impl<P: Platform> CheckpointScore<P> for PriorityFeeScore<P> {
 	type Error = Infallible;
 	type Score = u128;
 
 	fn score(checkpoint: &Checkpoint<P>) -> Result<Self::Score, Self::Error> {
-		Ok(checkpoint.effective_tip_per_gas())
+		Ok(checkpoint.min_effective_tip_per_gas())
 	}
 }
 

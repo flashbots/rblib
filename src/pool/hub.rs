@@ -3,13 +3,14 @@ use {
 	crate::pool::graph::OrderGraph,
 	arc_swap::ArcSwapOption,
 	canon::CanonicalState,
-	tokio::sync::broadcast::{self},
+	parking_lot::RwLock,
+	tokio::sync::broadcast,
 };
 
 pub struct Hub<P: Platform> {
 	config: Arc<Config<P>>,
 
-	orders: OrderGraph<P>,
+	graph: RwLock<OrderGraph<P>>,
 
 	/// Broadcast channel to notify subscribers of new orders.
 	fanout: broadcast::Sender<PooledOrder<P>>,
@@ -22,7 +23,7 @@ pub struct Hub<P: Platform> {
 impl<P: Platform> Hub<P> {
 	pub fn new(config: Arc<Config<P>>) -> Self {
 		Self {
-			orders: OrderGraph::default(),
+			graph: RwLock::new(OrderGraph::default()),
 			latest: ArcSwapOption::empty(),
 			fanout: broadcast::Sender::new(config.inflight_backlog_capacity),
 			config,
@@ -32,39 +33,32 @@ impl<P: Platform> Hub<P> {
 	pub fn subscribe(&self) -> broadcast::Receiver<PooledOrder<P>> {
 		self.fanout.subscribe()
 	}
+
+	pub fn graph_snapshot(&self) -> OrderGraph<P> {
+		self.graph.read().clone()
+	}
 }
 
 impl<P: Platform> Hub<P> {
-	pub fn insert(&self, order: Order<P>) -> eyre::Result<Eligibility> {
-		// First run static checks that do not require chain state
+	pub fn insert(&self, order: Order<P>) -> bool {
+		// First run static checks that do not require chain state to filter out
+		// obviously invalid orders that will never be eligible for inclusion in any
+		// current or furute block.
 		if !Filters::of(&self.config).intrinsic(&order) {
-			return Ok(Eligibility::PermanentlyIneligible);
+			return false;
 		}
 
-		// Next, run global checks if we have a canonical state source.
-		// If there's no state source, we optimistically accept the order
-		// and let it be filtered out later when we have chain state at later
-		// stages.
+		let order = PooledOrder::from(order);
 
-		let chain_state = self.latest.load();
-		let Some(chain_state) = chain_state.as_ref() else {
-			// Can't run eligibility checks without chain state, so we
-			// optimistically accept the order for now as ready.
-			todo!("insert ready order");
-		};
+		// Then broadcast it to all active order streams that are
+		// in the process of yielding orders for inclusion in a payload job (if
+		// any).
+		let _ = self.fanout.send(order.clone());
 
-		let eligibility = match Filters::of(&self.config).global(
-			&chain_state.state,
-			&chain_state.header,
-			&order,
-		)? {
-			e @ (Eligibility::Eligible | Eligibility::TemporarilyIneligible) => e,
-			Eligibility::PermanentlyIneligible => {
-				return Ok(Eligibility::PermanentlyIneligible);
-			}
-		};
+		// Finally insert it into the order graph.
+		self.graph.write().insert(order);
 
-		Ok(eligibility)
+		true
 	}
 
 	pub fn discard(&self, order_hash: OrderHash) {

@@ -88,23 +88,12 @@ impl<P: PlatformWithRpcTypes> BundlesApiServer<P> for BundlesRpcApi<P> {
 		trace!(hash = %bundle_hash, "eth_sendBundle received: {bundle:?}");
 
 		let order = Order::Bundle(bundle);
-		let eligibility = self.pool.insert(order).map_err(|e| {
-			debug!(
-				error = %e, bundle = %bundle_hash,
-				"Failed to insert bundle into pool"
-			);
 
-			ErrorObject::borrowed(
-				ErrorCode::InternalError.code(),
-				"Internal Error",
-				None,
-			)
-		})?;
-
-		if eligibility == Eligibility::PermanentlyIneligible {
+		if !self.pool.insert(order) {
+			// todo: explore better (more specific) error codes
 			return Err(ErrorObject::borrowed(
 				ErrorCode::InvalidParams.code(),
-				"bundle is ineligible for inclusion",
+				"Bundle is ineligible for inclusion",
 				None,
 			));
 		}
@@ -166,20 +155,8 @@ impl<P: PlatformWithRpcTypes> TransactionsApiServer<P>
 		let order = Order::Transaction(tx);
 		let order_hash = order.hash();
 
-		let eligibility = self.pool.insert(order).map_err(|e| {
-			debug!(
-				error = %e, tx = %order_hash,
-				"Failed to insert transaction into pool"
-			);
-
-			ErrorObject::borrowed(
-				ErrorCode::InternalError.code(),
-				"Internal Error",
-				None,
-			)
-		})?;
-
-		if eligibility == Eligibility::PermanentlyIneligible {
+		if !self.pool.insert(order.clone()) {
+			// todo: explore better (more specific) error codes
 			return Err(ErrorObject::borrowed(
 				ErrorCode::InvalidParams.code(),
 				"transaction is ineligible for inclusion",

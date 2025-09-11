@@ -4,8 +4,9 @@
 use {
 	super::*,
 	crate::alloy::primitives::Address,
-	dashmap::DashMap,
+	itertools::Itertools,
 	std::collections::HashMap,
+	tokio::sync::Notify,
 };
 
 /// This structure holds all orders in the pool, organized by their nonce
@@ -25,7 +26,64 @@ pub struct OrderGraph<P: Platform> {
 	///
 	/// If an order leaves the pool and partitions an order group into multiple
 	/// disconnected components, the components are split into separate groups.
-	by_signer: DashMap<Address, OrderGroup<P>>,
+	by_signer: im::HashMap<Address, OrderGroup<P>>,
+
+	/// Notify listeners when the graph changes.
+	notify: Notify,
+}
+
+impl<P: Platform> Clone for OrderGraph<P> {
+	fn clone(&self) -> Self {
+		Self {
+			by_signer: self.by_signer.clone(),
+			notify: Notify::new(),
+		}
+	}
+}
+
+/// Public API - mutable
+impl<P: Platform> OrderGraph<P> {
+	/// Inserts a new order into the graph, creating or merging order groups as
+	/// needed.
+	pub fn insert(&mut self, order: PooledOrder<P>) {
+		// we are going to be working on a shallow clone of the signer map while we
+		// reorganize groups.
+		let mut map = self.by_signer.clone();
+
+		// First collect all potential order groups that share signers with this
+		// order. If any found, they will all be merged into one group that will
+		// contain the new order as well.
+		let mut matches: Vec<OrderGroup<P>> = Vec::new();
+
+		for signer in order.signers() {
+			if let Some(group) = map.remove(&signer) {
+				matches.push(group);
+			}
+		}
+
+		if matches.is_empty() {
+			// this order is independent of any of other orders in the pool,
+			// create a new group for it.
+			let group = OrderGroup::new(order);
+			for signer in group.signers() {
+				map.insert(signer, group.clone());
+			}
+		}
+
+		todo!("insert order into graph");
+	}
+
+	pub fn pop_best(&mut self) -> Option<PooledOrder<P>> {
+		todo!("pop best order from graph");
+	}
+}
+
+/// Public API - immutable read
+impl<P: Platform> OrderGraph<P> {
+	/// Waits until the graph changes.
+	pub async fn changed(&self) {
+		self.notify.notified().await;
+	}
 }
 
 /// This structure represents a collection of orders that have nonce
@@ -39,6 +97,7 @@ pub struct OrderGraph<P: Platform> {
 /// - A list of user transactions + a bundle that backruns one of them.
 /// - An arbitrary combination of the above or bundles that share signers.
 /// - etc.
+#[derive(Clone)]
 pub struct OrderGroup<P: Platform>(OrderGroupInner<P>);
 
 impl<P: Platform> OrderGroup<P> {
@@ -56,9 +115,9 @@ impl<P: Platform> OrderGroup<P> {
 		}
 	}
 
-	/// Inserts a new order into this group.
-	pub fn insert(&mut self, _order: Order<P>) -> InsertionResult {
-		todo!("insert order into group");
+	/// Returns a unique list of all signers in this order group.
+	pub fn signers(&self) -> impl Iterator<Item = Address> {
+		self.0.signers().into_iter()
 	}
 }
 
@@ -92,6 +151,7 @@ pub enum InsertionResult {
 /// In theory we could represent all order groups as a graph, but here we
 /// optimize for the common cases of single independent orders and linear chains
 /// of orders as they are much cheaper to manage than a full graph structure.
+#[derive(Clone)]
 enum OrderGroupInner<P: Platform> {
 	/// This order group contains only one independent order.
 	Single(PooledOrder<P>),
@@ -112,9 +172,26 @@ enum OrderGroupInner<P: Platform> {
 	/// between orders in this graph can be any of the variants of
 	/// `NonceRelation`.
 	Graph {
-		orders: im::HashSet<OrderHash, PooledOrder<P>>,
+		orders: im::HashMap<OrderHash, PooledOrder<P>>,
 		edges: im::HashMap<OrderHash, im::Vector<(OrderHash, NonceRelation)>>,
 	},
+}
+
+impl<P: Platform> OrderGroupInner<P> {
+	/// Returns a list of all unique signers in this order group.
+	pub fn signers(&self) -> Vec<Address> {
+		match self {
+			OrderGroupInner::Single(order) => order.signers().collect(),
+			OrderGroupInner::Linear(orders) => {
+				orders.iter().flat_map(|o| o.signers()).unique().collect()
+			}
+			OrderGroupInner::Graph { orders, .. } => orders
+				.iter()
+				.flat_map(|(_, order)| order.signers())
+				.unique()
+				.collect(),
+		}
+	}
 }
 
 /// Computes the nonce dependency relation between two orders (left, right).

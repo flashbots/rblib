@@ -28,6 +28,7 @@ pub use {
 		OrderInclusionSuccess,
 	},
 	rpc::{BundleResult, BundlesApiClient},
+	score::{OrderScore, PriorityFeeScore, Score},
 };
 
 /// Implements an order pool that handles mempool operations for transactions
@@ -61,7 +62,7 @@ impl<P: Platform> OrderPool<P> {
 	///
 	/// First the order is sent to the `Hub`, which then distributes it to all
 	/// active `OrderStream`s and adds it to its internal pending list of orders.
-	pub fn insert(&self, order: Order<P>) -> eyre::Result<Eligibility> {
+	pub fn insert(&self, order: Order<P>) -> bool {
 		self.inner.hub.insert(order)
 	}
 }

@@ -43,7 +43,7 @@ impl<P: Platform> OrderFilter<P> for NonceFilter {
 
 	/// An order is globally ineligible if any of its transactions have a
 	/// nonce lower than the current account nonce.
-	fn global(
+	fn recent_state(
 		&self,
 		state: &dyn StateProvider,
 		_: &SealedHeader<types::Header<P>>,
@@ -64,12 +64,12 @@ impl<P: Platform> OrderFilter<P> for NonceFilter {
 		Ok(Eligibility::Eligible)
 	}
 
-	fn block(
+	fn payload_job(
 		&self,
 		block: &BlockContext<P>,
 		order: &Order<P>,
 	) -> eyre::Result<Eligibility> {
-		self.global(block.base_state(), block.parent(), order)
+		self.recent_state(block.base_state(), block.parent(), order)
 	}
 
 	fn checkpoint(

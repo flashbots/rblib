@@ -16,6 +16,10 @@ pub struct Config<P: Platform> {
 	/// See [`OrderFilter`] for more information on how to implement custom
 	/// filters.
 	pub filters: Vec<Box<dyn OrderFilter<P>>>,
+
+	/// A list of weighted scoring functions that are used to score orders in the
+	/// pool.
+	pub scores: Vec<(u32, Box<dyn OrderScore<P>>)>,
 }
 
 impl<P: Platform> Default for Config<P> {
@@ -29,6 +33,7 @@ impl<P: Platform> Default for Config<P> {
 				Box::new(SignerBalanceFilter),
 				Box::new(BundleFilter),
 			],
+			scores: vec![(1, Box::new(PriorityFeeScore))],
 		}
 	}
 }

@@ -1,12 +1,11 @@
 use {
-	super::*,
+	super::{graph::OrderGraph, *},
 	core::{
 		pin::Pin,
 		task::{Context, Poll},
 	},
 	futures::{Stream, StreamExt},
-	tokio_stream::wrappers::{BroadcastStream, errors::BroadcastStreamRecvError},
-	tracing::debug,
+	tokio_stream::wrappers::BroadcastStream,
 };
 
 /// This type implements an active stream of incoming orders. It iterates over
@@ -19,6 +18,7 @@ use {
 /// served by the `BestTransactions` iterator from Reth's transaction pool.
 pub struct OrdersStream<P: Platform> {
 	block: BlockContext<P>,
+	graph: OrderGraph<P>,
 	receiver: BroadcastStream<PooledOrder<P>>,
 }
 
@@ -28,6 +28,7 @@ impl<P: Platform> OrdersStream<P> {
 		Self {
 			block: block.clone(),
 			receiver: pool.hub().subscribe().into(),
+			graph: pool.hub().graph_snapshot(),
 		}
 	}
 }
@@ -40,15 +41,17 @@ impl<P: Platform> Stream for OrdersStream<P> {
 		cx: &mut Context<'_>,
 	) -> Poll<Option<Self::Item>> {
 		let this = self.get_mut();
-		match this.receiver.poll_next_unpin(cx) {
-			Poll::Ready(Some(Ok(order))) => Poll::Ready(Some(order)),
-			Poll::Ready(Some(Err(BroadcastStreamRecvError::Lagged(n)))) => {
-				debug!(skipped = n, "Sink lagged behind, skipped some orders");
-				cx.waker().wake_by_ref(); // poll again
-				Poll::Pending
-			}
-			Poll::Ready(None) => Poll::Ready(None),
-			Poll::Pending => Poll::Pending,
+
+		// make sure that we're up to date with any new orders that arrive after we
+		// created the stream.
+		if let Poll::Ready(Some(Ok(order))) = this.receiver.poll_next_unpin(cx) {
+			this.graph.insert(order);
 		}
+
+		if let Some(order) = this.graph.pop_best() {
+			cx.waker().wake_by_ref(); // there might be more orders available
+			return Poll::Ready(Some(order));
+		}
+		Poll::Pending
 	}
 }

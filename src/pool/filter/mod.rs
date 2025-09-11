@@ -55,7 +55,7 @@ pub trait OrderFilter<P: Platform>: Debug + Sync + Send + 'static {
 	///
 	/// This is called periodically when the chain advances to new blocks. At this
 	/// stage eligibility may change over time as the chain state changes.
-	fn global(
+	fn recent_state(
 		&self,
 		_: &dyn StateProvider,
 		_: &SealedHeader<types::Header<P>>,
@@ -73,7 +73,7 @@ pub trait OrderFilter<P: Platform>: Debug + Sync + Send + 'static {
 	/// and it will be discarded from the pool entirely.
 	///
 	/// This is called once per new order stream instance.
-	fn block(
+	fn payload_job(
 		&self,
 		_: &BlockContext<P>,
 		_: &Order<P>,
@@ -106,7 +106,7 @@ impl<'a, P: Platform> Filters<'a, P> {
 		self.0.filters.iter().all(|f| f.intrinsic(order))
 	}
 
-	pub fn global(
+	pub fn recent_state(
 		&self,
 		state: &dyn StateProvider,
 		header: &SealedHeader<types::Header<P>>,
@@ -115,7 +115,7 @@ impl<'a, P: Platform> Filters<'a, P> {
 		let mut eligibility = Eligibility::Eligible;
 
 		for filter in &self.0.filters {
-			eligibility = eligibility.min(filter.global(state, header, order)?);
+			eligibility = eligibility.min(filter.recent_state(state, header, order)?);
 
 			if eligibility == Eligibility::PermanentlyIneligible {
 				return Ok(eligibility);

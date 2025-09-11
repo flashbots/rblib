@@ -16,10 +16,13 @@ mod tip;
 
 pub use {profit::OrderByCoinbaseProfit, tip::OrderByPriorityFee};
 
-/// A trait that implements logic for assigning a score to an order.
-/// Different implementations of this trait provide different ordering
-/// strategies for orders, such as by total profit or by priority fee.
-pub trait OrderScore<P: Platform>:
+/// A trait that implements logic for assigning a score to an order in a state
+/// checkpoint. Different implementations of this trait provide different
+/// ordering strategies for orders, such as by total profit or by priority fee.
+///
+/// We are not using the `OrderScore` trait here because we want to avoid
+/// rexecuting the orders multiple times during the scoring phase.
+pub trait CheckpointScore<P: Platform>:
 	Clone + Default + Debug + Sync + Send + 'static
 {
 	type Score: Clone + Ord + Eq + core::hash::Hash;
@@ -37,8 +40,8 @@ pub trait OrderScore<P: Platform>:
 /// the last barrier checkpoint. Anything prior to the last barrier
 /// checkpoint is considered immutable and will not be reordered.
 #[derive(Debug, Clone, Default)]
-pub struct OrderBy<P: Platform, S: OrderScore<P>>(PhantomData<(P, S)>);
-impl<P: Platform, S: OrderScore<P>> Step<P> for OrderBy<P, S> {
+pub struct OrderBy<P: Platform, S: CheckpointScore<P>>(PhantomData<(P, S)>);
+impl<P: Platform, S: CheckpointScore<P>> Step<P> for OrderBy<P, S> {
 	async fn step(
 		self: Arc<Self>,
 		payload: Checkpoint<P>,
@@ -99,7 +102,7 @@ impl<P: Platform, S: OrderScore<P>> Step<P> for OrderBy<P, S> {
 /// nonce dependencies between transactions in the orders. Transactions within a
 /// bundle are guaranteed to remain in the same relative order to each other,
 /// but the order of bundles may change based on the scoring strategy.
-struct SortedOrders<'a, P: Platform, S: OrderScore<P>> {
+struct SortedOrders<'a, P: Platform, S: CheckpointScore<P>> {
 	/// A map of all signers and the set of orders they have transactions in.
 	by_signer: HashMap<Address, HashSet<B256>>,
 
@@ -115,7 +118,7 @@ struct SortedOrders<'a, P: Platform, S: OrderScore<P>> {
 	_scoring: PhantomData<S>,
 }
 
-impl<'a, P: Platform, S: OrderScore<P>> TryFrom<&'a Span<P>>
+impl<'a, P: Platform, S: CheckpointScore<P>> TryFrom<&'a Span<P>>
 	for SortedOrders<'a, P, S>
 {
 	type Error = S::Error;
@@ -163,7 +166,7 @@ impl<'a, P: Platform, S: OrderScore<P>> TryFrom<&'a Span<P>>
 	}
 }
 
-impl<'a, P: Platform, S: OrderScore<P>> IntoIterator
+impl<'a, P: Platform, S: CheckpointScore<P>> IntoIterator
 	for SortedOrders<'a, P, S>
 {
 	type IntoIter = std::vec::IntoIter<Self::Item>;
@@ -180,7 +183,7 @@ impl<'a, P: Platform, S: OrderScore<P>> IntoIterator
 	}
 }
 
-impl<'a, P: Platform, S: OrderScore<P>> SortedOrders<'a, P, S> {
+impl<'a, P: Platform, S: CheckpointScore<P>> SortedOrders<'a, P, S> {
 	pub fn pop_best(&mut self) -> Option<&'a Checkpoint<P>> {
 		let mut skip = 0;
 

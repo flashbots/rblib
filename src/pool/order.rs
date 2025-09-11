@@ -6,6 +6,7 @@ use {
 		primitives::{Address, B256},
 	},
 	derive_more::Deref,
+	itertools::Itertools,
 	reth::{ethereum::primitives::SignedTransaction, primitives::Recovered},
 };
 
@@ -28,6 +29,7 @@ impl<P: Platform> Order<P> {
 		}
 	}
 
+	/// Returns a slice of all transactions contained in this order.
 	pub fn transactions(&self) -> &[Recovered<types::Transaction<P>>] {
 		match self {
 			Order::Bundle(bundle) => bundle.transactions(),
@@ -46,8 +48,9 @@ impl<P: Platform> Order<P> {
 		matches!(self, Order::Bundle(_))
 	}
 
+	/// Returns an iterator over all unique signers in this order.
 	pub fn signers(&self) -> impl Iterator<Item = Address> {
-		self.transactions().iter().map(|tx| tx.signer())
+		self.transactions().iter().map(|tx| tx.signer()).unique()
 	}
 
 	pub fn nonces(&self) -> impl Iterator<Item = (Address, u64)> {
