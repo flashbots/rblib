@@ -1,16 +1,15 @@
 use {
 	super::{order::PooledOrder, *},
 	crate::pool::graph::OrderGraph,
-	arc_swap::ArcSwapOption,
+	arc_swap::{ArcSwap, ArcSwapOption},
 	canon::CanonicalState,
-	parking_lot::RwLock,
 	tokio::sync::broadcast,
 };
 
 pub struct Hub<P: Platform> {
 	config: Arc<Config<P>>,
 
-	graph: RwLock<OrderGraph<P>>,
+	graph: ArcSwap<OrderGraph<P>>,
 
 	/// Broadcast channel to notify subscribers of new orders.
 	fanout: broadcast::Sender<PooledOrder<P>>,
@@ -23,8 +22,8 @@ pub struct Hub<P: Platform> {
 impl<P: Platform> Hub<P> {
 	pub fn new(config: Arc<Config<P>>) -> Self {
 		Self {
-			graph: RwLock::new(OrderGraph::default()),
 			latest: ArcSwapOption::empty(),
+			graph: ArcSwap::from_pointee(OrderGraph::default()),
 			fanout: broadcast::Sender::new(config.inflight_backlog_capacity),
 			config,
 		}
@@ -34,8 +33,8 @@ impl<P: Platform> Hub<P> {
 		self.fanout.subscribe()
 	}
 
-	pub fn graph_snapshot(&self) -> OrderGraph<P> {
-		self.graph.read().clone()
+	pub fn graph(&self) -> OrderGraph<P> {
+		self.graph.load().as_ref().clone()
 	}
 }
 
@@ -55,8 +54,10 @@ impl<P: Platform> Hub<P> {
 		// any).
 		let _ = self.fanout.send(order.clone());
 
-		// Finally insert it into the order graph.
-		self.graph.write().insert(order);
+		// Finally insert it into the order graph maintained by the hub.
+		self
+			.graph
+			.rcu(|graph| graph.as_ref().clone().insert(order.clone()));
 
 		true
 	}
