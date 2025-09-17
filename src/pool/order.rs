@@ -6,8 +6,9 @@ use {
 		primitives::{Address, B256},
 	},
 	derive_more::Deref,
-	itertools::Itertools,
+	nonce::Nonce,
 	reth::{ethereum::primitives::SignedTransaction, primitives::Recovered},
+	std::collections::{HashMap, HashSet},
 };
 
 pub type OrderHash = B256;
@@ -49,11 +50,11 @@ impl<P: Platform> Order<P> {
 	}
 
 	/// Returns an iterator over all unique signers in this order.
-	pub fn signers(&self) -> impl Iterator<Item = Address> {
-		self.transactions().iter().map(|tx| tx.signer()).unique()
+	pub fn signers(&self) -> HashSet<Address> {
+		self.transactions().iter().map(|tx| tx.signer()).collect()
 	}
 
-	pub fn nonces(&self) -> impl Iterator<Item = (Address, u64)> {
+	pub fn nonces(&self) -> impl Iterator<Item = (Address, Nonce)> {
 		self
 			.transactions()
 			.iter()
@@ -100,8 +101,16 @@ impl<P: Platform> PooledOrder<P> {
 		Self(Arc::new(PooledOrderInner {
 			hash: order.hash(),
 			order,
+			ancestors: HashMap::new(),
+			descendants: HashMap::new(),
 		}))
 	}
+}
+
+impl<P: Platform> PooledOrder<P> {
+	pub fn discard(&self) {}
+
+	pub fn commit(&self) {}
 }
 
 #[derive(Debug, Deref)]
@@ -109,4 +118,6 @@ pub struct PooledOrderInner<P: Platform> {
 	#[deref]
 	pub order: Order<P>,
 	pub hash: OrderHash,
+	pub ancestors: HashMap<OrderHash, PooledOrder<P>>,
+	pub descendants: HashMap<OrderHash, PooledOrder<P>>,
 }

@@ -18,7 +18,7 @@ use {
 /// served by the `BestTransactions` iterator from Reth's transaction pool.
 pub struct OrdersStream<P: Platform> {
 	block: BlockContext<P>,
-	graph: Option<OrderGraph<P>>,
+	graph: OrderGraph<P>,
 	receiver: BroadcastStream<PooledOrder<P>>,
 	wakers: Vec<Waker>,
 }
@@ -29,7 +29,7 @@ impl<P: Platform> OrdersStream<P> {
 		Self {
 			block: block.clone(),
 			receiver: pool.hub().subscribe().into(),
-			graph: Some(pool.hub().graph()),
+			graph: pool.hub().graph(),
 			wakers: Vec::new(),
 		}
 	}
@@ -43,18 +43,15 @@ impl<P: Platform> Stream for OrdersStream<P> {
 		cx: &mut Context<'_>,
 	) -> Poll<Option<Self::Item>> {
 		let this = self.get_mut();
-		let graph = this.graph.take().expect("graph is always Some; qed");
 
 		// make sure that we're up to date with any new orders that arrive after we
 		// created the stream.
 		if let Poll::Ready(Some(Ok(order))) = this.receiver.poll_next_unpin(cx) {
-			this.graph = Some(graph.insert(order));
+			this.graph.insert(order);
 		}
 
 		// pop the next eligible order from the graph.
-		let graph = this.graph.take().expect("graph is always Some; qed");
-		if let Some((graph, order)) = graph.pop() {
-			this.graph = Some(graph);
+		if let Some(order) = this.graph.pop() {
 			return Poll::Ready(Some(order));
 		}
 

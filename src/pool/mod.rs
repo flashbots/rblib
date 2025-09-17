@@ -5,6 +5,7 @@ mod config;
 mod filter;
 mod graph;
 mod hub;
+mod nonce;
 mod order;
 mod pipeline;
 mod report;

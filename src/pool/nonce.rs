@@ -1,6 +1,51 @@
-use super::*;
+use {
+	super::*,
+	crate::alloy,
+	alloy::primitives::Address,
+	derive_more::{Deref, DerefMut},
+	std::collections::HashMap,
+};
+
+pub type Nonce = u64;
+
+/// Represents the current committed nonce state for a subset of signers.
+///
+/// The mapping is partial, i.e., it may not contain every possible signer, and
+/// the absence of a signer implies an unknown nonce state for that signer.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deref, DerefMut)]
+pub struct NonceState(im::HashMap<Address, Nonce>);
+
+impl NonceState {
+	/// Tests whether a given order is eligible for inclustion in a block at the
+	/// current nonce state. If any of the signers in the order is not present in
+	/// the state, `None` is returned to indicate unknown eligibility.
+	pub fn is_eligible<P: Platform>(
+		&self,
+		order: &Order<P>,
+	) -> Option<Eligibility> {
+		for (addr, order_nonce) in order.nonces() {
+			let state_nonce = *self.get(&addr)?;
+			if order_nonce < state_nonce {
+				return Some(Eligibility::PermanentlyIneligible);
+			} else if order_nonce > state_nonce {
+				return Some(Eligibility::TemporarilyIneligible);
+			}
+		}
+		Some(Eligibility::Eligible)
+	}
+
+	pub fn update(&mut self, other: NonceState) {
+		for (addr, nonce) in other.iter() {
+			self.insert(*addr, *nonce);
+		}
+	}
+}
 
 /// This is used to represent the result of dependency check between two orders.
+///
+/// This relation is idempotent and symmetric in the sense that `between(a, b)`
+/// == `between(b, a).inverse()`. The `Independent` and `MutuallyExclusive`
+/// cases are self-inverse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NonceRelation {
 	/// The two orders are independent, i.e., they do not share any signers and
@@ -124,12 +169,15 @@ impl NonceRelation {
 	///   elsewhere to be strictly increasing without internal gaps; therefore
 	///   each signer’s nonce usage can be summarized by a closed interval [min,
 	///   max].
+	/// - This operation is symmetric and idempotent: `between(a, b) == between(b,
+	///   a).inverse()`. The `Independent` and `MutuallyExclusive` cases are
+	///   self-inverse.
 	pub fn between<P: Platform>(left: &Order<P>, right: &Order<P>) -> Self {
 		struct Entry {
-			l_min: u64,
-			l_max: u64,
-			r_min: u64,
-			r_max: u64,
+			l_min: Nonce,
+			l_max: Nonce,
+			r_min: Nonce,
+			r_max: Nonce,
 			r_seen: bool,
 		}
 
@@ -151,8 +199,8 @@ impl NonceRelation {
 				.or_insert(Entry {
 					l_min: nonce,
 					l_max: nonce,
-					r_min: u64::MAX,
-					r_max: 0,
+					r_min: Nonce::MAX,
+					r_max: Nonce::MIN,
 					r_seen: false,
 				});
 		}
@@ -252,40 +300,9 @@ impl NonceRelation {
 #[cfg(test)]
 mod tests {
 	use {
-		super::*,
-		crate::{alloy, reth, test_utils::*},
-		alloy::{
-			consensus::SignableTransaction,
-			network::{TransactionBuilder, TxSignerSync},
-			primitives::{Address, U256},
-			signers::local::PrivateKeySigner,
-		},
-		reth::{ethereum::primitives::SignedTransaction, primitives::Recovered},
+		super::{super::tests::make_tx, *},
+		crate::test_utils::*,
 	};
-
-	fn make_tx<P: PlatformWithRpcTypes>(
-		signer: &PrivateKeySigner,
-		nonce: u64,
-	) -> Recovered<types::Transaction<P>> {
-		let mut tx = types::TransactionRequest::<P>::default()
-			.with_nonce(nonce)
-			.with_to(Address::random())
-			.with_value(U256::from(1_000u64))
-			.with_gas_price(1_000_000_000)
-			.with_gas_limit(21_000)
-			.with_max_priority_fee_per_gas(1_000_000)
-			.with_max_fee_per_gas(2_000_000)
-			.build_unsigned()
-			.expect("valid transaction request");
-
-		let sig = signer
-			.sign_transaction_sync(&mut tx)
-			.expect("signing should succeed");
-
-		let envelope: types::TxEnvelope<P> = tx.into_signed(sig).into();
-		let tx: types::Transaction<P> = envelope.into();
-		tx.try_into_recovered().unwrap()
-	}
 
 	// Independent: distinct signers, single transactions.
 	#[rblib_test(Ethereum, Optimism)]

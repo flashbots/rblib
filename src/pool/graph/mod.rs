@@ -3,18 +3,15 @@
 
 use {
 	super::*,
-	crate::alloy,
+	crate::{alloy, pool::nonce::NonceState},
 	alloy::primitives::Address,
-	deps::NonceRelation,
 	derive_more::Deref,
-	group::{GroupId, OrderGroup},
-	itertools::Itertools,
-	std::collections::HashMap,
+	group::{GroupId, GroupMutations, OrderGroup},
+	std::collections::HashSet,
+	tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
 };
 
-mod deps;
 mod group;
-mod merge;
 
 /// This structure holds all orders in the pool, linked by their nonce
 /// dependencies. It is responsible for identifying inter-order dependencies and
@@ -28,7 +25,7 @@ mod merge;
 /// of the graph. This design allows this graph to be cheaply snapshotted and
 /// given to new `OrdersStream` instances. Under the covers this is optimized
 /// for performance by using structural sharing.
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct OrderGraph<P: Platform> {
 	/// All order groups in this graph, indexed by their unique Identifier.
 	/// The identifiers have no meaning outside of this structure and are
@@ -47,16 +44,71 @@ pub struct OrderGraph<P: Platform> {
 	/// If an order leaves the pool and partitions an order group into multiple
 	/// disconnected components, the components are split into separate groups.
 	signers: im::HashMap<Address, GroupId>,
+
+	/// The latest known nonce for each address
+	nonces: NonceState,
+
+	events: (
+		UnboundedReceiver<OrderGraphEvent<P>>,
+		UnboundedSender<OrderGraphEvent<P>>,
+	),
+}
+
+impl<P: Platform> Clone for OrderGraph<P> {
+	fn clone(&self) -> Self {
+		Self {
+			groups: self.groups.clone(),
+			orders: self.orders.clone(),
+			signers: self.signers.clone(),
+			nonces: self.nonces.clone(),
+			events: unbounded_channel(),
+		}
+	}
 }
 
 /// Public API - mutations
 impl<P: Platform> OrderGraph<P> {
+	pub fn update_nonces(&mut self, nonces: NonceState) {
+		let affected_groups: HashSet<_> = nonces
+			.iter()
+			.filter_map(|(addr, _)| self.signers.get(addr).copied())
+			.collect();
+
+		for group_id in affected_groups {
+			let group = self.groups.remove(&group_id).expect("group exists; qed");
+			let relevant_nonces = nonces.iter().filter_map(|(addr, nonce)| {
+				group.signers().contains(addr).then(|| (*addr, *nonce))
+			});
+
+			let update_result = group.update_nonces(relevant_nonces.collect());
+			for signer in update_result.dropped_signers {
+				self.signers.remove(&signer);
+			}
+			for order in update_result.dropped_orders {
+				self.orders.remove(&order.hash());
+				self.events.1.send(OrderGraphEvent::Discarded(order)).ok();
+			}
+			for group in update_result.output_groups {
+				self.insert_group(group);
+			}
+		}
+
+		self.nonces.update(nonces);
+	}
+
 	/// Inserts a new order into the graph, creating or merging order groups as
 	/// needed.
-	pub fn insert(mut self, order: PooledOrder<P>) -> Self {
+	pub fn insert(&mut self, order: PooledOrder<P>) {
 		if self.orders.contains_key(&order.hash()) {
 			// order already present, noop
-			return self;
+			return;
+		}
+
+		if self.nonces.is_eligible(&order)
+			== Some(Eligibility::PermanentlyIneligible)
+		{
+			// order is permanently ineligible, noop
+			return;
 		}
 
 		// First collect all potential order groups that share signers with this
@@ -66,17 +118,78 @@ impl<P: Platform> OrderGraph<P> {
 		let group = self
 			.extract_matching(&order)
 			.into_iter()
-			.try_fold(OrderGroup::Single(order), |g, other| g.merge(other))
+			.try_fold(OrderGroup::new(order), |g, other| g.merge(other))
 			.expect("groups must share at least one signer with the new order; qed");
 
 		// Finally insert the new supergroup into the graph, updating all indices.
 		self.insert_group(group);
 
-		self
+		self.events.1.send(OrderGraphEvent::Added(order)).ok();
 	}
 
-	pub fn pop(self) -> Option<(Self, PooledOrder<P>)> {
-		todo!("pop best order from graph");
+	/// Discards an order from the graph. If the order is not present, this is a
+	/// no-op. Otherwise the order is removed from this graph and all dependent
+	/// orders are also affected.
+	pub fn discard(&mut self, order_hash: OrderHash) {
+		let Some(group_id) = self.orders.remove(&order_hash) else {
+			// order not present, noop
+			return;
+		};
+
+		let Some(group) = self.groups.remove(&group_id) else {
+			// group not present, noop
+			return;
+		};
+
+		let result = group.discard(order_hash);
+
+		for signer in result.dropped_signers {
+			self.signers.remove(&signer);
+		}
+
+		for group in result.output_groups {
+			self.insert_group(group);
+		}
+
+		for order in result.dropped_orders {
+			self.orders.remove(&order.hash());
+			self.events.1.send(OrderGraphEvent::Discarded(order)).ok();
+		}
+	}
+
+	/// Returns the next best order from the graph, removing it from the graph and
+	/// committing to it. This will update the nonces of all signers involved
+	/// and may cause other orders to become ineligible and be dropped from the
+	/// graph as well.
+	pub fn pop(&mut self) -> Option<PooledOrder<P>> {
+		let group_id = GroupId::random(); // todo!("select best group id");
+		let group = self.remove_group(&group_id)?;
+		let pop_result = group.pop();
+
+		if let Some(order) = pop_result.order {
+			for signer in pop_result.dropped_signers {
+				self.signers.remove(&signer);
+			}
+
+			for order in pop_result.dropped_orders {
+				self.orders.remove(&order.hash());
+				self.events.1.send(OrderGraphEvent::Discarded(order)).ok();
+			}
+
+			for group in pop_result.result.output_groups {
+				self.insert_group(group);
+			}
+
+			self.update_nonces(pop_result.nonces);
+			self
+				.events
+				.1
+				.send(OrderGraphEvent::Committed(order.clone()))
+				.ok();
+			order
+		} else {
+			None
+		}
 	}
 }
 
@@ -106,7 +219,7 @@ impl<P: Platform> OrderGraph<P> {
 	/// The group ID is randomly generated and returned.
 	fn insert_group(&mut self, group: OrderGroup<P>) -> GroupId {
 		let group_id = loop {
-			let id = GroupId::new();
+			let id = GroupId::random();
 			if !self.groups.contains_key(&id) {
 				break id;
 			}
@@ -141,6 +254,7 @@ impl<P: Platform> OrderGraph<P> {
 	fn matching_groups(&self, order: &Order<P>) -> impl Iterator<Item = GroupId> {
 		order
 			.signers()
+			.into_iter()
 			.filter_map(|signer| self.signers.get(&signer).copied())
 	}
 
@@ -153,4 +267,15 @@ impl<P: Platform> OrderGraph<P> {
 			.map(|id| self.remove_group(&id).expect("group exists; qed"))
 			.collect()
 	}
+}
+
+pub enum OrderGraphEvent<P: Platform> {
+	/// An order was successfully added into the graph.
+	Added(PooledOrder<P>),
+
+	/// The order was removed from the graph and was committed to.
+	Committed(PooledOrder<P>),
+
+	/// An order was removed from the graph without being committed to.
+	Discarded(PooledOrder<P>),
 }
