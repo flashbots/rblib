@@ -55,9 +55,9 @@ impl<P: Platform> Hub<P> {
 		let _ = self.fanout.send(order.clone());
 
 		// Finally insert it into the order graph maintained by the hub.
-		self
-			.graph
-			.rcu(|graph| graph.as_ref().clone().insert(order.clone()));
+		// self
+		// 	.graph
+		// 	.rcu(|graph| graph.as_ref().clone().insert(order.clone()));
 
 		true
 	}

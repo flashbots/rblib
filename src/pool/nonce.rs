@@ -2,7 +2,7 @@ use {
 	super::*,
 	crate::alloy,
 	alloy::primitives::Address,
-	derive_more::{Deref, DerefMut},
+	derive_more::{Deref, DerefMut, From},
 	std::collections::HashMap,
 };
 
@@ -12,8 +12,14 @@ pub type Nonce = u64;
 ///
 /// The mapping is partial, i.e., it may not contain every possible signer, and
 /// the absence of a signer implies an unknown nonce state for that signer.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deref, DerefMut)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deref, DerefMut, From)]
 pub struct NonceState(im::HashMap<Address, Nonce>);
+
+impl FromIterator<(Address, Nonce)> for NonceState {
+	fn from_iter<T: IntoIterator<Item = (Address, Nonce)>>(iter: T) -> Self {
+		Self(iter.into_iter().collect())
+	}
+}
 
 impl NonceState {
 	/// Tests whether a given order is eligible for inclustion in a block at the

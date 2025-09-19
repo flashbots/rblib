@@ -6,9 +6,8 @@ use {
 	crate::{alloy, pool::nonce::NonceState},
 	alloy::primitives::Address,
 	derive_more::Deref,
-	group::{GroupId, GroupMutations, OrderGroup},
+	group::{GroupId, OrderGroup},
 	std::collections::HashSet,
-	tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
 };
 
 mod group;
@@ -47,11 +46,6 @@ pub struct OrderGraph<P: Platform> {
 
 	/// The latest known nonce for each address
 	nonces: NonceState,
-
-	events: (
-		UnboundedReceiver<OrderGraphEvent<P>>,
-		UnboundedSender<OrderGraphEvent<P>>,
-	),
 }
 
 impl<P: Platform> Clone for OrderGraph<P> {
@@ -61,7 +55,6 @@ impl<P: Platform> Clone for OrderGraph<P> {
 			orders: self.orders.clone(),
 			signers: self.signers.clone(),
 			nonces: self.nonces.clone(),
-			events: unbounded_channel(),
 		}
 	}
 }
@@ -75,7 +68,7 @@ impl<P: Platform> OrderGraph<P> {
 			.collect();
 
 		for group_id in affected_groups {
-			let group = self.groups.remove(&group_id).expect("group exists; qed");
+			let mut group = self.groups.remove(&group_id).expect("group exists; qed");
 			let relevant_nonces = nonces.iter().filter_map(|(addr, nonce)| {
 				group.signers().contains(addr).then(|| (*addr, *nonce))
 			});
@@ -86,7 +79,6 @@ impl<P: Platform> OrderGraph<P> {
 			}
 			for order in update_result.dropped_orders {
 				self.orders.remove(&order.hash());
-				self.events.1.send(OrderGraphEvent::Discarded(order)).ok();
 			}
 			for group in update_result.output_groups {
 				self.insert_group(group);
@@ -123,8 +115,6 @@ impl<P: Platform> OrderGraph<P> {
 
 		// Finally insert the new supergroup into the graph, updating all indices.
 		self.insert_group(group);
-
-		self.events.1.send(OrderGraphEvent::Added(order)).ok();
 	}
 
 	/// Discards an order from the graph. If the order is not present, this is a
@@ -153,7 +143,6 @@ impl<P: Platform> OrderGraph<P> {
 
 		for order in result.dropped_orders {
 			self.orders.remove(&order.hash());
-			self.events.1.send(OrderGraphEvent::Discarded(order)).ok();
 		}
 	}
 
@@ -167,26 +156,21 @@ impl<P: Platform> OrderGraph<P> {
 		let pop_result = group.pop();
 
 		if let Some(order) = pop_result.order {
-			for signer in pop_result.dropped_signers {
+			for signer in pop_result.removal.dropped_signers {
 				self.signers.remove(&signer);
 			}
 
-			for order in pop_result.dropped_orders {
+			for order in pop_result.removal.dropped_orders {
 				self.orders.remove(&order.hash());
-				self.events.1.send(OrderGraphEvent::Discarded(order)).ok();
 			}
 
-			for group in pop_result.result.output_groups {
+			for group in pop_result.removal.output_groups {
 				self.insert_group(group);
 			}
 
 			self.update_nonces(pop_result.nonces);
-			self
-				.events
-				.1
-				.send(OrderGraphEvent::Committed(order.clone()))
-				.ok();
-			order
+
+			Some(order)
 		} else {
 			None
 		}
@@ -267,15 +251,4 @@ impl<P: Platform> OrderGraph<P> {
 			.map(|id| self.remove_group(&id).expect("group exists; qed"))
 			.collect()
 	}
-}
-
-pub enum OrderGraphEvent<P: Platform> {
-	/// An order was successfully added into the graph.
-	Added(PooledOrder<P>),
-
-	/// The order was removed from the graph and was committed to.
-	Committed(PooledOrder<P>),
-
-	/// An order was removed from the graph without being committed to.
-	Discarded(PooledOrder<P>),
 }
