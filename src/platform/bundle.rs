@@ -356,6 +356,10 @@ impl<P: Platform> FlashbotsBundle<P> {
 			return Eligibility::TemporarilyIneligible;
 		}
 
+		// assertions:
+		// - transaction count > 0
+		// - min_timestamp < timestamp < max_timestamp
+		// - block_number == number
 		Eligibility::Eligible
 	}
 }
