@@ -301,61 +301,17 @@ impl<P: Platform> Bundle<P> for FlashbotsBundle<P> {
 	}
 
 	fn is_eligible(&self, block: &BlockContext<P>) -> Eligibility {
-		if self.transactions().is_empty() {
-			// empty bundles are never eligible
-			return Eligibility::PermanentlyIneligible;
-		}
-
-		if self
-			.max_timestamp
-			.is_some_and(|max_ts| max_ts > block.timestamp())
-		{
-			// this bundle will never be eligible for inclusion anymore
-			return Eligibility::PermanentlyIneligible;
-		}
-
-		if self
-			.min_timestamp
-			.is_some_and(|min_ts| min_ts < block.timestamp())
-		{
-			// this bundle is not eligible yet
-			return Eligibility::TemporarilyIneligible;
-		}
-
-		if self.block_number != 0 && self.block_number > block.parent().number() {
-			// this bundle is not eligible yet
-			return Eligibility::TemporarilyIneligible;
-		}
-
-		if self.block_number != 0 && self.block_number < block.parent().number() {
-			// this bundle will never be eligible for inclusion anymore
-			return Eligibility::PermanentlyIneligible;
-		}
-
-		Eligibility::Eligible
+		self.eligibility_at(block.timestamp(), block.number())
 	}
 
 	fn is_permanently_ineligible(
 		&self,
 		block: &SealedHeader<types::Header<P>>,
 	) -> bool {
-		if self.transactions().is_empty() {
-			// empty bundles are never eligible
-			return true;
-		}
-
-		if self
-			.max_timestamp
-			.is_some_and(|max_ts| max_ts < block.timestamp())
-		{
-			return true;
-		}
-
-		if self.block_number != 0 && self.block_number < block.number() {
-			return true;
-		}
-
-		false
+		matches!(
+			self.eligibility_at(block.timestamp(), block.number()),
+			Eligibility::PermanentlyIneligible
+		)
 	}
 
 	fn is_allowed_to_fail(&self, tx: TxHash) -> bool {
@@ -372,6 +328,35 @@ impl<P: Platform> Bundle<P> for FlashbotsBundle<P> {
 			hasher.update(tx.tx_hash());
 		}
 		hasher.finalize()
+	}
+}
+
+impl<P: Platform> FlashbotsBundle<P> {
+	fn eligibility_at(&self, timestamp: u64, number: u64) -> Eligibility {
+		// Permanent ineligibility checked first
+		if self.transactions().is_empty() {
+			// empty bundles are never eligible
+			return Eligibility::PermanentlyIneligible;
+		}
+
+		if self.max_timestamp.is_some_and(|max_ts| max_ts < timestamp) {
+			return Eligibility::PermanentlyIneligible;
+		}
+
+		if self.block_number != 0 && self.block_number < number {
+			return Eligibility::PermanentlyIneligible;
+		}
+
+		// Temporary ineligibility checked next
+		if self.min_timestamp.is_some_and(|min_ts| min_ts > timestamp) {
+			return Eligibility::TemporarilyIneligible;
+		}
+
+		if self.block_number != 0 && self.block_number > number {
+			return Eligibility::TemporarilyIneligible;
+		}
+
+		Eligibility::Eligible
 	}
 }
 
