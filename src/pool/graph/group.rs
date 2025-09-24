@@ -1,6 +1,7 @@
 use {
 	super::{nonce::NonceRelation, *},
 	im::hashmap::ConsumingIter,
+	rustc_hash::FxHashSet,
 	std::collections::HashSet,
 };
 
@@ -81,8 +82,12 @@ impl<P: Platform> OrderGroup<P> {
 	}
 
 	/// Returns a list of all unique signers in this order group.
-	pub fn signers(&self) -> HashSet<Address> {
-		self.orders.values().flat_map(|o| o.signers()).collect()
+	pub fn signers(&self) -> FxHashSet<Address> {
+		self
+			.orders
+			.values()
+			.flat_map(|o| o.signers().clone())
+			.collect()
 	}
 
 	/// Returns true if the given order shares any signers with any order in

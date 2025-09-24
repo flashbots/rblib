@@ -1,13 +1,18 @@
 use {
 	super::*,
-	crate::{alloy, reth},
+	crate::{
+		alloy,
+		pool::group::{Group, Groups},
+		reth,
+	},
 	alloy::{
 		consensus::{Transaction, crypto::RecoveryError},
 		primitives::{Address, B256},
 	},
-	core::sync::atomic::AtomicUsize,
+	core::{ops::Deref, sync::atomic::AtomicUsize},
 	nonce::Nonce,
 	reth::{ethereum::primitives::SignedTransaction, primitives::Recovered},
+	rustc_hash::FxHashSet,
 	std::collections::{HashMap, HashSet},
 };
 
@@ -57,7 +62,7 @@ impl<P: Platform> Order<P> {
 	}
 
 	/// Returns an iterator over all unique signers in this order.
-	pub fn signers(&self) -> HashSet<Address> {
+	pub fn signers(&self) -> FxHashSet<Address> {
 		self.transactions().iter().map(|tx| tx.signer()).collect()
 	}
 
@@ -89,6 +94,18 @@ impl<P: Platform> PooledOrder<P> {
 	pub fn hash(&self) -> OrderHash {
 		self.0.hash
 	}
+
+	pub fn signers(&self) -> &FxHashSet<Address> {
+		&self.0.signers
+	}
+}
+
+impl<P: Platform> Deref for PooledOrder<P> {
+	type Target = Order<P>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.0.order
+	}
 }
 
 impl<P: Platform> PartialEq for PooledOrder<P> {
@@ -118,21 +135,13 @@ impl<P: Platform> From<PooledOrder<P>> for Order<P> {
 
 impl<P: Platform> PooledOrder<P> {
 	pub fn new(order: Order<P>) -> Self {
+		debug_assert!(!order.transactions().is_empty());
 		Self(Arc::new(PooledOrderInner {
 			hash: order.hash(),
+			signers: order.signers(),
 			order,
-			group: Arc::new(Group::default()),
-			ancestors: HashMap::new(),
-			descendants: HashMap::new(),
-			conflicts: HashMap::new(),
 		}))
 	}
-}
-
-impl<P: Platform> PooledOrder<P> {
-	pub fn discard(&self) {}
-
-	pub fn commit(&self) {}
 }
 
 #[derive(Debug)]
@@ -143,60 +152,6 @@ struct PooledOrderInner<P: Platform> {
 	/// The hash of the order.
 	pub hash: OrderHash,
 
-	/// The group this order belongs to. All orders in the same group share at
-	/// least one signer address.
-	pub group: Arc<Group<P>>,
-
-	/// Orders that must be included before this order can be included.
-	/// All ancestors will belong to the same group as this order.
-	pub ancestors: HashMap<OrderHash, PooledOrder<P>>,
-
-	/// Orders that depend on this order being included first.
-	/// All descendants will belong to the same group as this order.
-	pub descendants: HashMap<OrderHash, PooledOrder<P>>,
-
-	/// Orders that conflict with this order. For example, two orders that
-	/// attempt to spend the same nonce for the same signer will be in conflict.
-	///
-	/// If this order is committed, all conflicting orders must be discarded.
-	///
-	/// All conflicting orders will belong to the same group as this order.
-	pub conflicts: HashMap<OrderHash, PooledOrder<P>>,
-}
-
-/// Represents a group of orders that have nonce relationships between them.
-/// See the [`NonceRelation`] documentation for more details on the types of
-/// nonce relationships that can exist between orders.
-#[derive(Debug, Default)]
-pub struct Group<P: Platform> {
-	/// The list of addresses that are signers on orders in this group.
-	/// Each signed transaction in an order increments the reference count for
-	/// its signer address. When an order is removed from the pool, the
-	/// reference counts for its signers are decremented.
-	///
-	/// This is used to quickly identify if an order belongs to this group.
-	signers: HashMap<Address, AtomicUsize>,
-
-	/// All orders that are part of this group.
-	orders: HashMap<OrderHash, PooledOrder<P>>,
-}
-
-impl<P: Platform> Group<P> {
-	/// Tests whether the given order belongs to this group.
-	/// An order belongs to a group if it shares at least one signer with any
-	/// order already in the group.
-	pub fn belongs(&self, order: &Order<P>) -> bool {
-		order
-			.signers()
-			.iter()
-			.any(|signer| self.signers.contains_key(signer))
-	}
-
-	/// Returns an iterator over all orders in this group that have no ancestors.
-	pub fn roots(&self) -> impl Iterator<Item = &PooledOrder<P>> {
-		self
-			.orders
-			.values()
-			.filter(|order| order.0.ancestors.is_empty())
-	}
+	/// The unique set of signers in this order.
+	pub signers: FxHashSet<Address>,
 }

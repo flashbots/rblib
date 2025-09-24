@@ -30,14 +30,14 @@ impl<P: Platform> OrderPool<P> {
 			// future payloads. remove it permanently from the pool so it
 			// won't be attempted again
 			ExecutionError::IneligibleBundle(Eligibility::PermanentlyIneligible) => {
-				self.inner.hub.discard(order_hash);
+				// todo
 			}
 
 			ExecutionError::InvalidSignature(_) => {
 				// This order is permanently ineligible for inclusion in this and any
 				// future payloads. remove it permanently from the pool so it
 				// won't be attempted again
-				self.inner.hub.discard(order_hash);
+				// todo
 			}
 
 			// TODO: Implement this logic

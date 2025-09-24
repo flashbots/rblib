@@ -18,8 +18,8 @@ use {
 /// served by the `BestTransactions` iterator from Reth's transaction pool.
 pub struct OrdersStream<P: Platform> {
 	block: BlockContext<P>,
-	graph: OrderGraph<P>,
-	receiver: BroadcastStream<PooledOrder<P>>,
+	// graph: OrderGraph<P>,
+	// receiver: BroadcastStream<PooledOrder<P>>,
 	wakers: Vec<Waker>,
 }
 
@@ -28,8 +28,8 @@ impl<P: Platform> OrdersStream<P> {
 		tracing::info!(">--> new OrdersStream at block {}", block.number());
 		Self {
 			block: block.clone(),
-			receiver: pool.hub().subscribe().into(),
-			graph: pool.hub().graph(),
+			// receiver: pool.hub().subscribe().into(),
+			// graph: pool.hub().graph(),
 			wakers: Vec::new(),
 		}
 	}
@@ -46,14 +46,14 @@ impl<P: Platform> Stream for OrdersStream<P> {
 
 		// make sure that we're up to date with any new orders that arrive after we
 		// created the stream.
-		if let Poll::Ready(Some(Ok(order))) = this.receiver.poll_next_unpin(cx) {
-			this.graph.insert(order);
-		}
+		// if let Poll::Ready(Some(Ok(order))) = this.receiver.poll_next_unpin(cx) {
+		// 	this.graph.insert(order);
+		// }
 
-		// pop the next eligible order from the graph.
-		if let Some(order) = this.graph.pop() {
-			return Poll::Ready(Some(order));
-		}
+		// // pop the next eligible order from the graph.
+		// if let Some(order) = this.graph.pop() {
+		// 	return Poll::Ready(Some(order));
+		// }
 
 		// if there are no more orders in the graph, we need to wait for new ones to
 		// arrive. We register the current task's waker so that we can be woken up

@@ -112,6 +112,8 @@ metrics = "0.24.0"
 arc-swap = "1.7"
 im = "15.1"
 rand = "0.9"
+rustc-hash = "2.1"
+
 
 alloy-origin = { version = "1.0.27", package = "alloy", features = [
   "k256",

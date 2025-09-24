@@ -4,6 +4,7 @@ mod canon;
 mod config;
 mod filter;
 mod graph;
+mod group;
 mod hub;
 mod nonce;
 mod order;
@@ -64,7 +65,13 @@ impl<P: Platform> OrderPool<P> {
 	/// First the order is sent to the `Hub`, which then distributes it to all
 	/// active `OrderStream`s and adds it to its internal pending list of orders.
 	pub fn insert(&self, order: Order<P>) -> bool {
-		self.inner.hub.insert(order)
+		// Discard orders that don't pass the intrinsic filters
+		if !Filters::of(self.inner.config()).intrinsic(&order) {
+			return false;
+		}
+
+		self.inner.hub.accept(order);
+		true
 	}
 }
 
@@ -99,7 +106,7 @@ struct OrderPoolInner<P: Platform> {
 impl<P: Platform> OrderPoolInner<P> {
 	pub fn new(config: Config<P>, canonical: CanonicalStateSource<P>) -> Self {
 		let config = Arc::new(config);
-		let hub = Hub::new(Arc::clone(&config));
+		let hub = Hub::new();
 
 		Self {
 			config,
@@ -110,7 +117,7 @@ impl<P: Platform> OrderPoolInner<P> {
 
 	pub fn with_config(config: Config<P>) -> Self {
 		let config = Arc::new(config);
-		let hub = Hub::new(Arc::clone(&config));
+		let hub = Hub::new();
 
 		Self {
 			config,
@@ -121,7 +128,7 @@ impl<P: Platform> OrderPoolInner<P> {
 
 	pub fn with_state_source(canonical: CanonicalStateSource<P>) -> Self {
 		let config = Arc::new(Config::default());
-		let hub = Hub::new(Arc::clone(&config));
+		let hub = Hub::new();
 
 		Self {
 			config,
