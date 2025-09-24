@@ -371,6 +371,32 @@ impl<P: Platform> Bundle<P> for FlashbotsBundle<P> {
 		for tx in self.transactions() {
 			hasher.update(tx.tx_hash());
 		}
+		hasher.update(self.block_number.to_be_bytes());
+		if let Some(min_ts) = self.min_timestamp {
+			hasher.update(min_ts.to_be_bytes());
+		}
+		if let Some(max_ts) = self.max_timestamp {
+			hasher.update(max_ts.to_be_bytes());
+		}
+		for tx in &self.reverting_tx_hashes {
+			hasher.update(tx);
+		}
+		if let Some(replacement_uuid) = &self.replacement_uuid {
+			hasher.update(replacement_uuid);
+		}
+		for tx in &self.dropping_tx_hashes {
+			hasher.update(tx);
+		}
+		if let Some(refund_percent) = self.refund_percent {
+			hasher.update(refund_percent.to_be_bytes());
+		}
+		if let Some(refund_recipient) = &self.refund_recipient {
+			hasher.update(refund_recipient);
+		}
+		for tx in &self.refund_tx_hashes {
+			hasher.update(tx);
+		}
+		// extra fields not taken into account in the hash
 		hasher.finalize()
 	}
 }
