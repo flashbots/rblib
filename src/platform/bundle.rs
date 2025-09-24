@@ -34,8 +34,10 @@ use {
 /// This trait defines a set of transactions that are bundled together and
 /// should be processed as a single unit of execution.
 ///
-/// Examples of bundles are objects sent through the `eth_sendBundle` RPC
-/// method.
+/// Examples of bundles are objects sent through the [`eth_sendBundle`] JSON-RPC
+/// endpoint.
+///
+/// [`eth_sendBundle`]: https://docs.flashbots.net/flashbots-auction/searchers/advanced/rpc-endpoint#eth_sendbundle
 pub trait Bundle<P: Platform>:
 	Serialize + DeserializeOwned + Clone + Debug + Send + Sync + 'static
 {
@@ -49,8 +51,8 @@ pub trait Bundle<P: Platform>:
 	/// maintain the same order of transactions as the original bundle.
 	///
 	/// The system guarantees that this function will not be called for a
-	/// transaction that is not in the bundle, or a transaction that is not
-	/// optional or the last remaining transaction in the bundle.
+	/// transaction not in the bundle, not optional or not the last remaining in
+	/// the bundle.
 	#[must_use]
 	fn without_transaction(self, tx: TxHash) -> Self;
 
@@ -62,7 +64,7 @@ pub trait Bundle<P: Platform>:
 	/// it will never be eligible for inclusion in any future block that is a
 	/// descendant of the given header.
 	///
-	/// Implementing this method is optional for bundles but it gives the ability
+	/// Implementing this method is optional for bundles, but it gives the ability
 	/// to filter out bundles at the RPC level before they are sent to the pool.
 	fn is_permanently_ineligible(
 		&self,
@@ -71,11 +73,11 @@ pub trait Bundle<P: Platform>:
 		false
 	}
 
-	/// Checks if a transaction with a given hash is allowed to not have a
+	/// Checks if a transaction of the given hash is allowed to not have a
 	/// successful execution result for this bundle.
 	///
-	/// the `tx` is the hash of the transaction to check and it is guaranteed to
-	/// be hash of one of the transactions returned by `transactions()`.
+	/// The `tx` is the hash of the transaction to check, that should be part of
+	/// this bundle.
 	fn is_allowed_to_fail(&self, tx: TxHash) -> bool;
 
 	/// Checks if a transaction with the given hash may be removed from the
@@ -83,11 +85,12 @@ pub trait Bundle<P: Platform>:
 	fn is_optional(&self, tx: TxHash) -> bool;
 
 	/// An optional check for bundle implementations that have validity
-	/// requirements on the resulting state. For example there may be an
-	/// implementation that requires a certain minimal balance in some account
-	/// after the bundle is executed. The state that is passed in this method
-	/// contains only entries that were modified or created by executing
-	/// transactions from this bundle.
+	/// requirements on the resulting state.
+	///
+	/// For example, an implementation can require a minimal balance for some
+	/// accounts after bundle execution. The state passed in this method contains
+	/// only entries that were modified or created by executing transactions from
+	/// this bundle.
 	fn validate_post_execution(
 		&self,
 		_: &BundleState,
@@ -111,7 +114,7 @@ pub enum Eligibility {
 	/// mean that the bundle will actually be included, but only that static
 	/// checks that do not require execution checks have passed.
 	///
-	/// Bundles in this state if not included in the block should be kept in the
+	/// Bundles in this state, if not included in the block, should be kept in the
 	/// pool and retried in future blocks.
 	Eligible,
 
@@ -130,7 +133,7 @@ pub enum Eligibility {
 	/// implementation supports this type of limit.
 	///
 	/// Bundles in this state should be removed from the pool and not attempted
-	/// to be included in any future blocks.
+	/// for inclusion in any future blocks.
 	///
 	/// Once a bundle returns this state, it should never return any other
 	/// eligibility state.
@@ -141,21 +144,13 @@ impl Eligibility {
 	/// Returns `Some(f())` if the eligibility is `Eligible`, otherwise returns
 	/// `None`.
 	pub fn then<T, F: FnOnce() -> T>(self, f: F) -> Option<T> {
-		if self == Eligibility::Eligible {
-			Some(f())
-		} else {
-			None
-		}
+		matches!(self, Eligibility::Eligible).then(f)
 	}
 
 	/// Returns `Some(t)` if the eligibility is `Eligible`, otherwise returns
 	/// `None`.
 	pub fn then_some<T>(self, t: T) -> Option<T> {
-		if self == Eligibility::Eligible {
-			Some(t)
-		} else {
-			None
-		}
+		matches!(self, Eligibility::Eligible).then_some(t)
 	}
 }
 
@@ -179,11 +174,11 @@ impl Not for Eligibility {
 	}
 }
 
-/// A bundle of transactions that adheres to the [Flashbots specification].
-/// see: <https://docs.flashbots.net/flashbots-auction/searchers/advanced/rpc-endpoint#eth_sendbundle>
+/// A [Bundle] that follows Flashbots [`eth_sendBundle`] specification.
 ///
-/// By default this is the bundle type that is used by both the `Ethereum` and
-/// `Optimism` platforms.
+/// Default bundle type used by both `Ethereum` and `Optimism` platforms.
+///
+/// [`eth_sendBundle`]: https://docs.flashbots.net/flashbots-auction/searchers/advanced/rpc-endpoint#eth_sendbundle
 #[derive(Debug, Clone)]
 pub struct FlashbotsBundle<P: Platform> {
 	inner: EthSendBundle,
