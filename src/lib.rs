@@ -25,6 +25,9 @@ pub mod pool;
 /// Common steps library
 pub mod steps;
 
+/// Gas Limiter
+pub mod gas_limiter;
+
 /// Externally available test utilities
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
