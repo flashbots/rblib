@@ -115,6 +115,7 @@ impl<P: Platform> Checkpoint<P> {
 	pub fn transactions(&self) -> &[Recovered<types::Transaction<P>>] {
 		match &self.inner.mutation {
 			Mutation::Barrier => &[],
+			Mutation::NamedBarrier(_) => &[],
 			Mutation::Executable(result) => result.transactions(),
 		}
 	}
@@ -124,6 +125,7 @@ impl<P: Platform> Checkpoint<P> {
 	pub fn result(&self) -> Option<&ExecutionResult<P>> {
 		match &self.inner.mutation {
 			Mutation::Barrier => None,
+			Mutation::NamedBarrier(_) => None,
 			Mutation::Executable(result) => Some(result),
 		}
 	}
@@ -133,6 +135,7 @@ impl<P: Platform> Checkpoint<P> {
 	pub fn state(&self) -> Option<&BundleState> {
 		match self.inner.mutation {
 			Mutation::Barrier => None,
+			Mutation::NamedBarrier(_) => None,
 			Mutation::Executable(ref result) => Some(result.state()),
 		}
 	}
@@ -140,6 +143,11 @@ impl<P: Platform> Checkpoint<P> {
 	/// Returns true if this checkpoint is a barrier checkpoint.
 	pub fn is_barrier(&self) -> bool {
 		matches!(self.inner.mutation, Mutation::Barrier)
+	}
+
+	/// Returns true if this checkpoint is a named barrier checkpoint.
+	pub fn is_named_barrier(&self, name: &str) -> bool {
+		matches!(self.inner.mutation, Mutation::NamedBarrier(ref barrier_name) if barrier_name == name)
 	}
 
 	/// If this checkpoint is a single transaction, returns a reference to the
@@ -207,6 +215,22 @@ impl<P: Platform> Checkpoint<P> {
 			}),
 		}
 	}
+
+	/// Creates a new checkpoint on top of the current checkpoint that introduces
+	/// a named barrier. This new checkpoint will be now considered the new
+	/// beginning of mutable history.
+	#[must_use]
+	pub fn named_barrier(&self, name: impl Into<String>) -> Self {
+		Self {
+			inner: Arc::new(CheckpointInner {
+				block: self.inner.block.clone(),
+				prev: Some(Arc::clone(&self.inner)),
+				depth: self.inner.depth + 1,
+				mutation: Mutation::NamedBarrier(name.into()),
+				created_at: Instant::now(),
+			}),
+		}
+	}
 }
 
 /// Internal API
@@ -249,6 +273,11 @@ enum Mutation<P: Platform> {
 	/// the previous checkpoint. The executable item can be a single transaction
 	/// or a bundle of transactions.
 	Executable(ExecutionResult<P>),
+
+	/// A checkpoint that was created by applying a named barrier on top of the
+	/// previous checkpoint. The named barrier is used to indicate that any prior
+	/// checkpoints are immutable and should not be discarded or reordered.
+	NamedBarrier(String),
 }
 
 struct CheckpointInner<P: Platform> {
@@ -445,7 +474,13 @@ impl<P: Platform> Display for Checkpoint<P> {
 
 			// this is a barrier checkpoint, which has no transactions
 			// applied to it.
-			return write!(f, "[{}] barrier", self.depth());
+			return match &self.inner.mutation {
+				Mutation::Barrier => write!(f, "[{}] barrier", self.depth()),
+				Mutation::NamedBarrier(name) => {
+					write!(f, "[{}] barrier '{}'", self.depth(), name)
+				}
+				_ => unreachable!(),
+			};
 		};
 
 		match exec_result.source() {

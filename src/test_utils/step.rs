@@ -191,6 +191,16 @@ impl<P: PlatformWithRpcTypes + TestNodeFactory<P>> OneStep<P> {
 		self
 	}
 
+	/// Adds a named barrier to the input payload of the step at the current
+	/// position.
+	#[must_use]
+	pub fn with_payload_named_barrier(mut self, name: impl Into<String>) -> Self {
+		self
+			.payload_input
+			.push(InputPayloadItemFn::NamedBarrier(name.into()));
+		self
+	}
+
 	/// Adds a new transaction to the mempool and makes it available to the step.
 	/// Here we don't need to manage nonces, as the mempool will report the
 	/// pending transactions for the signer and nonces will be set automatically.
@@ -224,6 +234,9 @@ impl<P: PlatformWithRpcTypes + TestNodeFactory<P>> OneStep<P> {
 			.map(|input| -> eyre::Result<InputPayloadItem<P>> {
 				Ok(match input {
 					InputPayloadItemFn::Barrier => InputPayloadItem::Barrier,
+					InputPayloadItemFn::NamedBarrier(name) => {
+						InputPayloadItem::NamedBarrier(name)
+					}
 					InputPayloadItemFn::Tx(mut builder) => InputPayloadItem::Tx(
 						builder(
 							local_node
@@ -298,6 +311,7 @@ impl<P: PlatformWithRpcTypes> Step<P> for PopulatePayload<P> {
 		while let Ok(input) = self.receiver.lock().await.try_recv() {
 			payload = match input {
 				InputPayloadItem::Barrier => payload.barrier(),
+				InputPayloadItem::NamedBarrier(name) => payload.named_barrier(name),
 				InputPayloadItem::Tx(tx) => {
 					payload.apply(tx).expect("Failed to apply transaction")
 				}
@@ -381,12 +395,14 @@ impl<P: Platform> Step<P> for RecordBreakAndFail<P> {
 
 enum InputPayloadItemFn<P: PlatformWithRpcTypes> {
 	Barrier,
+	NamedBarrier(String),
 	Tx(BoxedTxBuilderFn<P>),
 	Bundle(types::Bundle<P>),
 }
 
 enum InputPayloadItem<P: PlatformWithRpcTypes> {
 	Barrier,
+	NamedBarrier(String),
 	Tx(types::TxEnvelope<P>),
 	Bundle(types::Bundle<P>),
 }
