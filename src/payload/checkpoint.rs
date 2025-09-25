@@ -114,8 +114,7 @@ impl<P: Platform> Checkpoint<P> {
 	/// represents a bundle.
 	pub fn transactions(&self) -> &[Recovered<types::Transaction<P>>] {
 		match &self.inner.mutation {
-			Mutation::Barrier => &[],
-			Mutation::NamedBarrier(_) => &[],
+			Mutation::Barrier | Mutation::NamedBarrier(_) => &[],
 			Mutation::Executable(result) => result.transactions(),
 		}
 	}
@@ -124,8 +123,7 @@ impl<P: Platform> Checkpoint<P> {
 	/// checkpoint.
 	pub fn result(&self) -> Option<&ExecutionResult<P>> {
 		match &self.inner.mutation {
-			Mutation::Barrier => None,
-			Mutation::NamedBarrier(_) => None,
+			Mutation::Barrier | Mutation::NamedBarrier(_) => None,
 			Mutation::Executable(result) => Some(result),
 		}
 	}
@@ -134,8 +132,7 @@ impl<P: Platform> Checkpoint<P> {
 	/// transaction(s) that created this checkpoint.
 	pub fn state(&self) -> Option<&BundleState> {
 		match self.inner.mutation {
-			Mutation::Barrier => None,
-			Mutation::NamedBarrier(_) => None,
+			Mutation::Barrier | Mutation::NamedBarrier(_) => None,
 			Mutation::Executable(ref result) => Some(result.state()),
 		}
 	}
@@ -479,7 +476,9 @@ impl<P: Platform> Display for Checkpoint<P> {
 				Mutation::NamedBarrier(name) => {
 					write!(f, "[{}] barrier '{}'", self.depth(), name)
 				}
-				_ => unreachable!(),
+				Mutation::Executable(_) => {
+					unreachable!("Executable variant handled above")
+				}
 			};
 		};
 
