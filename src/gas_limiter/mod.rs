@@ -1,13 +1,21 @@
-use std::{cmp::min, sync::Arc, time::Instant};
+use std::{cmp::min, marker::PhantomData, sync::Arc, time::Instant};
 
 use alloy_primitives::Address;
 use dashmap::DashMap;
 
-use crate::gas_limiter::{args::GasLimiterArgs, error::GasLimitError, metrics::GasLimiterMetrics};
+use crate::{
+	alloy::consensus::Transaction,
+	gas_limiter::metrics::GasLimiterMetrics,
+	pool::Order,
+	prelude::*,
+};
 
 pub mod args;
 pub mod error;
 mod metrics;
+
+pub use args::GasLimiterArgs;
+pub use error::GasLimitError;
 
 #[derive(Debug, Clone)]
 pub struct AddressGasLimiter {
@@ -27,6 +35,71 @@ struct AddressGasLimiterInner {
 struct TokenBucket {
     capacity: u64,
     available: u64,
+}
+
+/// A filter wrapper around AddressGasLimiter that can be used with AppendOrders.
+/// This provides a convenient way to integrate per-address gas limiting into
+/// the payload building pipeline.
+#[derive(Debug, Clone)]
+pub struct GasLimitFilter<P: Platform> {
+	limiter: AddressGasLimiter,
+	_phantom: PhantomData<P>,
+}
+
+impl<P: Platform> GasLimitFilter<P> {
+	/// Creates a new gas limit filter with the given configuration.
+	pub fn new(config: GasLimiterArgs) -> Self {
+		Self {
+			limiter: AddressGasLimiter::new(config),
+			_phantom: PhantomData,
+		}
+	}
+
+	/// Creates a filter closure that can be used with AppendOrders::with_filter().
+	/// The filter will reject orders if any of their transactions would exceed
+	/// the per-address gas limit. The filter automatically refreshes gas buckets
+	/// when it detects a new block number.
+	pub fn create_filter(
+		self,
+	) -> impl Fn(&Checkpoint<P>, &Order<P>) -> bool + Send + Sync + 'static {
+		use std::sync::atomic::{AtomicU64, Ordering};
+		
+		// Track the last block number we refreshed for
+		let last_refreshed_block = Arc::new(AtomicU64::new(0));
+		
+		move |payload: &Checkpoint<P>, order: &Order<P>| -> bool {
+			// Get current block number from the payload's context
+			let current_block = payload.block().number();
+			let last_block = last_refreshed_block.load(Ordering::Relaxed);
+			
+			// Refresh gas buckets if we're on a new block
+			if current_block > last_block {
+				self.limiter.refresh(current_block);
+				last_refreshed_block.store(current_block, Ordering::Relaxed);
+			}
+			
+			// For each transaction in the order, check if the signer has enough gas budget
+			for tx in order.transactions() {
+				let signer = tx.signer();
+				// Access the underlying transaction to get gas limit
+                
+				let gas_limit = tx.gas_limit();
+
+				// Try to consume gas from the signer's bucket
+				if self.limiter.consume_gas(signer, gas_limit).is_err() {
+					// Not enough gas in bucket, reject this order
+					return true; // true means "skip this order"
+				}
+			}
+			false // false means "don't skip this order"
+		}
+	}
+
+	/// Refreshes the gas buckets, typically called at the start of each block.
+	/// This refills buckets and performs garbage collection of stale entries.
+	pub fn refresh(&self, block_number: u64) {
+		self.limiter.refresh(block_number);
+	}
 }
 
 impl AddressGasLimiter {
