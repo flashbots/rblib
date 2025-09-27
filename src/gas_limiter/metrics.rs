@@ -1,12 +1,11 @@
 use std::time::Duration;
 
 use metrics::{Counter, Gauge, Histogram};
-use reth_metrics::Metrics;
 
+use crate::prelude::*;
 use crate::gas_limiter::error::GasLimitError;
 
-#[derive(Metrics, Clone)]
-#[metrics(scope = "op_rbuilder.gas_limiter")]
+#[derive(MetricsSet)]
 pub(super) struct GasLimiterMetrics {
     /// Transactions rejected by gas limits Labeled by reason: "per_address",
     /// "global", "burst"

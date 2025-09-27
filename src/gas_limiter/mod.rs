@@ -18,12 +18,12 @@ mod metrics;
 pub use args::GasLimiterArgs;
 pub use error::GasLimitError;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct AddressGasLimiter {
     inner: Option<AddressGasLimiterInner>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct AddressGasLimiterInner {
     config: GasLimiterArgs,
     address_buckets: DashMap<Address, TokenBucket>,
@@ -39,7 +39,7 @@ struct TokenBucket {
 /// A filter wrapper around AddressGasLimiter that can be used with AppendOrders.
 /// This provides a convenient way to integrate per-address gas limiting into
 /// the payload building pipeline.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct GasLimitFilter<P: Platform> {
 	limiter: AddressGasLimiter,
 	_phantom: PhantomData<P>,
