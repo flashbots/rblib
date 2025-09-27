@@ -7,6 +7,8 @@ pub struct Groups<P: Platform> {
 	by_order: im::HashMap<OrderHash, GroupId>,
 }
 
+// GroupRemove is defined in mod.rs and used here.
+
 impl<P: Platform> Groups<P> {
 	pub fn get(&self, id: &GroupId) -> Option<Group<P>> {
 		self.groups.get(id).cloned()
@@ -16,14 +18,10 @@ impl<P: Platform> Groups<P> {
 		self.groups.get_mut(id)
 	}
 
-	/// Returns a list of all group IDs that would be affected by inserting
-	/// an order with the given signers. This is the list of groups that share at
-	/// least one signer with the given order. Upon isertion all these groups
-	/// will be merged into one.
 	pub fn touched(&self, order: &PooledOrder<P>) -> Vec<GroupId> {
 		let signers = order.signers();
 		assert!(!signers.is_empty());
-		let mut touched = FxHashSet::<GroupId>::default();
+		let mut touched = rustc_hash::FxHashSet::<GroupId>::default();
 
 		for signer in signers {
 			if let Some(gid) = self.by_signer.get(signer) {
@@ -36,32 +34,31 @@ impl<P: Platform> Groups<P> {
 
 	pub fn insert(&mut self, order: PooledOrder<P>) -> GroupId {
 		if let Some(existing) = self.by_order.get(&order.hash()) {
-			// already present
 			return *existing;
 		}
 
 		let touched = self.touched(&order);
 
 		match touched.len() {
-			// new group with just this order
 			0 => self.create_new_group(order),
-
-			// insert into existing group and return its (possibly updated) id
 			1 => {
 				let gid = *touched.iter().next().expect("present");
 				self.extend_group(gid, order)
 			}
-
-			// merge multiple groups by absorbing into the largest group
 			_ => self.merge_groups(order, touched),
 		}
 	}
 }
 
-/// Insert - internal impl details
+/// Public outcome of removing an order at the Groups level.
+pub enum RemoveResult {
+	NoopAbsent,
+	Updated(GroupId),
+	Split(Vec<GroupId>),
+	Vanished,
+}
+
 impl<P: Platform> Groups<P> {
-	/// When an order does not have any signer overlap with existing groups,
-	/// create a new group for it.
 	fn create_new_group(&mut self, order: PooledOrder<P>) -> GroupId {
 		let order_hash = order.hash();
 		let signers = order.signers().clone();
@@ -83,8 +80,6 @@ impl<P: Platform> Groups<P> {
 		gid
 	}
 
-	/// When an order overlaps with exactly one existing group, insert it into
-	/// that group. Returns the (possibly updated) GroupId of the group.
 	fn extend_group(&mut self, gid: GroupId, order: PooledOrder<P>) -> GroupId {
 		let order_hash = order.hash();
 		let signers = order.signers().clone();
@@ -117,7 +112,6 @@ impl<P: Platform> Groups<P> {
 	) -> GroupId {
 		assert!(!groups.is_empty());
 
-		// we will collapse all groups into the largest one (smaller anchor if tie)
 		let target_gid = *groups
 			.iter()
 			.max_by(|a, b| {
@@ -129,9 +123,9 @@ impl<P: Platform> Groups<P> {
 
 		let max_epoch = groups
 			.iter()
-			.max_by_key(|gid| gid.epoch())
-			.expect("non-empty")
-			.epoch();
+			.map(|gid| gid.epoch())
+			.max()
+			.expect("non-empty");
 
 		let others: Vec<Group<P>> = groups
 			.into_iter()
@@ -159,29 +153,27 @@ impl<P: Platform> Groups<P> {
 			for (h, o) in &other.orders {
 				target_inner.orders.entry(*h).or_insert_with(|| o.clone());
 			}
-			for (&a, &rc) in &other.order_rc {
-				*target_inner.order_rc.entry(a).or_insert(0) += rc;
-				target_inner.adj.entry(a).or_default();
+			for (&a, &rc) in &other.conn.order_rc {
+				*target_inner.conn.order_rc.entry(a).or_insert(0) += rc;
+				target_inner.conn.adj.entry(a).or_default();
 				if a < new_anchor {
 					new_anchor = a;
 				}
 			}
-			for (&(a, b), &rc) in &other.edge_rc {
-				let entry = target_inner.edge_rc.entry((a, b)).or_insert(0);
+			for (&(a, b), &rc) in &other.conn.edge_rc {
+				let entry = target_inner.conn.edge_rc.entry((a, b)).or_insert(0);
 				let was_zero = *entry == 0;
 				*entry += rc;
 				if was_zero && *entry > 0 {
-					target_inner.adj.entry(a).or_default().insert(b);
-					target_inner.adj.entry(b).or_default().insert(a);
+					target_inner.conn.adj.entry(a).or_default().insert(b);
+					target_inner.conn.adj.entry(b).or_default().insert(a);
 				}
 			}
 		}
 
-		// Finalize id: merge rule epoch = max_epoch + 1; anchor may shrink.
 		target_inner.id = GroupId(new_anchor, max_epoch + 1);
 		drop(target_inner);
 
-		// Move entry if GroupId changed; then reindex once.
 		let gid_new = self.groups.get(&target_gid).expect("present").id();
 		let final_gid = if gid_new == target_gid {
 			target_gid
@@ -203,14 +195,112 @@ impl<P: Platform> Groups<P> {
 		};
 
 		let inner = inner.read();
-		// reindex orders
 		for &h in inner.orders.keys() {
 			self.by_order.insert(h, gid);
 		}
-
-		// reindex signers
-		for &s in inner.order_rc.keys() {
+		for &s in inner.conn.order_rc.keys() {
 			self.by_signer.insert(s, gid);
+		}
+	}
+}
+
+impl<P: Platform> Groups<P> {
+	/// Remove an order by hash; updates indices and handles id move, split, or
+	/// vanish.
+	pub fn remove(&mut self, hash: OrderHash) -> RemoveResult {
+		let Some(&gid) = self.by_order.get(&hash) else {
+			return RemoveResult::NoopAbsent;
+		};
+		self.by_order.remove(&hash);
+
+		let res = {
+			let g = self.get_mut(&gid).expect("group exists");
+			g.remove(hash)
+		};
+
+		match res {
+			GroupRemove::NoopAbsent => RemoveResult::NoopAbsent,
+			GroupRemove::StillConnected {
+				old_id,
+				new_id,
+				removed_signers,
+			} => self.handle_still_connected(old_id, new_id, removed_signers),
+			GroupRemove::Split {
+				old_id, children, ..
+			} => self.handle_split(old_id, children),
+			GroupRemove::Vanished {
+				old_id,
+				removed_signers,
+			} => self.handle_vanished(old_id, removed_signers),
+		}
+	}
+
+	#[inline]
+	fn handle_still_connected(
+		&mut self,
+		old_id: GroupId,
+		new_id: GroupId,
+		removed_signers: FxHashSet<Address>,
+	) -> RemoveResult {
+		for s in removed_signers {
+			self.by_signer.remove(&s);
+		}
+		if new_id == old_id {
+			RemoveResult::Updated(new_id)
+		} else {
+			self.move_group_id(old_id, new_id);
+			self.reindex_group(new_id);
+			RemoveResult::Updated(new_id)
+		}
+	}
+
+	#[inline]
+	fn handle_split(
+		&mut self,
+		old_id: GroupId,
+		mut children: Vec<Group<P>>,
+	) -> RemoveResult {
+		self.groups.remove(&old_id);
+		self.purge_signers_mapped_to(old_id);
+
+		let mut ids = Vec::with_capacity(children.len());
+		for child in children.drain(..) {
+			let id = child.id();
+			self.groups.insert(id, child);
+			self.reindex_group(id);
+			ids.push(id);
+		}
+		RemoveResult::Split(ids)
+	}
+
+	#[inline]
+	fn handle_vanished(
+		&mut self,
+		old_id: GroupId,
+		removed_signers: FxHashSet<Address>,
+	) -> RemoveResult {
+		self.groups.remove(&old_id);
+		for s in removed_signers {
+			self.by_signer.remove(&s);
+		}
+		RemoveResult::Vanished
+	}
+
+	#[inline]
+	fn move_group_id(&mut self, old_id: GroupId, new_id: GroupId) {
+		let updated = self.groups.remove(&old_id).expect("present");
+		self.groups.insert(new_id, updated);
+	}
+
+	#[inline]
+	fn purge_signers_mapped_to(&mut self, gid: GroupId) {
+		let to_purge: Vec<Address> = self
+			.by_signer
+			.iter()
+			.filter_map(|(a, g)| if *g == gid { Some(*a) } else { None })
+			.collect();
+		for a in to_purge {
+			self.by_signer.remove(&a);
 		}
 	}
 }
@@ -220,6 +310,7 @@ mod tests {
 	use {
 		super::{super::tests::make_tx, *},
 		crate::test_utils::*,
+		alloy::primitives::B256,
 		itertools::Itertools,
 	};
 
@@ -505,5 +596,250 @@ mod tests {
 		assert_eq!(groups.by_order.len(), 1);
 		assert_eq!(groups.by_signer.len(), 1);
 		assert_eq!(groups.by_order.get(&h), Some(&gid1));
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn remove_unknown_is_noop<P: TestablePlatform>() {
+		let a0 = FundedAccounts::signer(0).address();
+		let tx = make_tx::<P>(&FundedAccounts::by_address(a0).unwrap(), 0);
+		let po: PooledOrder<P> = Order::Transaction(tx).into();
+		let unknown: B256 = po.hash(); // not inserted
+
+		let mut groups = Groups::<P>::default();
+		let res = groups.remove(unknown);
+		assert!(matches!(res, RemoveResult::NoopAbsent));
+		assert_eq!(groups.groups.len(), 0);
+		assert_eq!(groups.by_order.len(), 0);
+		assert_eq!(groups.by_signer.len(), 0);
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn remove_last_order_vanishes_group<P: TestablePlatform>() {
+		let a0 = FundedAccounts::signer(0).address();
+		let tx = make_tx::<P>(&FundedAccounts::by_address(a0).unwrap(), 0);
+		let po: PooledOrder<P> = Order::Transaction(tx).into();
+		let h = po.hash();
+
+		let mut groups = Groups::<P>::default();
+		let gid = groups.insert(po);
+		assert_eq!(groups.groups.len(), 1);
+		assert_eq!(groups.by_order.len(), 1);
+		assert_eq!(groups.by_signer.len(), 1);
+
+		let res = groups.remove(h);
+		assert!(matches!(res, RemoveResult::Vanished));
+		assert_eq!(groups.groups.len(), 0);
+		assert_eq!(groups.by_order.len(), 0);
+		assert_eq!(groups.by_signer.len(), 0);
+
+		// Old gid is gone
+		assert!(groups.get(&gid).is_none());
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn remove_non_bridge_keeps_connected_anchor_unchanged<
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+	>() {
+		// s0 < s1 by address
+		let signers = (0..2)
+			.map(FundedAccounts::signer)
+			.sorted_by(|a, b| a.address().cmp(&b.address()))
+			.collect::<Vec<_>>();
+		let a0 = signers[0].address();
+		let a1 = signers[1].address();
+
+		// o_ab: bundle {s0, s1}
+		let tx0 = make_tx::<P>(&FundedAccounts::by_address(a0).unwrap(), 0);
+		let tx1 = make_tx::<P>(&FundedAccounts::by_address(a1).unwrap(), 0);
+		let o_ab = {
+			let bundle = FlashbotsBundle::<P>::default()
+				.with_transaction(tx0)
+				.with_transaction(tx1);
+			let po: PooledOrder<P> = Order::Bundle(bundle).into();
+			po
+		};
+
+		// o_b: single tx from s1
+		let o_b = {
+			let txb = make_tx::<P>(&FundedAccounts::by_address(a1).unwrap(), 1);
+			let po: PooledOrder<P> = Order::Transaction(txb).into();
+			po
+		};
+
+		let mut groups = Groups::<P>::default();
+		let gid0 = groups.insert(o_ab.clone());
+		let gid0b = groups.insert(o_b.clone());
+		assert_eq!(gid0, gid0b);
+		assert_eq!(gid0.anchor(), a0);
+		assert_eq!(groups.groups.len(), 1);
+		assert_eq!(groups.by_order.len(), 2);
+		assert_eq!(groups.by_signer.len(), 2);
+
+		// Remove non-bridge o_b
+		let res = groups.remove(o_b.hash());
+		assert!(matches!(res, RemoveResult::Updated(id) if id == gid0));
+		// Still one group, same id and anchor
+		assert_eq!(groups.groups.len(), 1);
+		let gid_after = groups.groups.iter().next().unwrap().0;
+		assert_eq!(gid_after.anchor(), a0);
+		assert_eq!(gid_after.epoch(), gid0.epoch());
+		// Signers remain both s0 and s1 due to o_ab
+		assert_eq!(groups.by_signer.len(), 2);
+		assert!(groups.by_signer.get(&a0).is_some());
+		assert!(groups.by_signer.get(&a1).is_some());
+		// Only one order left
+		assert_eq!(groups.by_order.len(), 1);
+		assert!(groups.by_order.get(&o_ab.hash()).is_some());
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn remove_eliminates_anchor_but_keeps_connected_anchor_changes<
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+	>() {
+		// s0 < s1 < s2
+		let signers = (0..3)
+			.map(FundedAccounts::signer)
+			.sorted_by(|a, b| a.address().cmp(&b.address()))
+			.collect::<Vec<_>>();
+		let a0 = signers[0].address();
+		let a1 = signers[1].address();
+		let a2 = signers[2].address();
+
+		// o01: {s0, s1}
+		let o01 = {
+			let tx0 = make_tx::<P>(&FundedAccounts::by_address(a0).unwrap(), 0);
+			let tx1 = make_tx::<P>(&FundedAccounts::by_address(a1).unwrap(), 0);
+			let bundle = FlashbotsBundle::<P>::default()
+				.with_transaction(tx0)
+				.with_transaction(tx1);
+			let po: PooledOrder<P> = Order::Bundle(bundle).into();
+			po
+		};
+
+		// o12: {s1, s2}
+		let o12 = {
+			let tx1b = make_tx::<P>(&FundedAccounts::by_address(a1).unwrap(), 1);
+			let tx2 = make_tx::<P>(&FundedAccounts::by_address(a2).unwrap(), 0);
+			let bundle = FlashbotsBundle::<P>::default()
+				.with_transaction(tx1b)
+				.with_transaction(tx2);
+			let po: PooledOrder<P> = Order::Bundle(bundle).into();
+			po
+		};
+
+		let mut groups = Groups::<P>::default();
+		let gid0 = groups.insert(o01.clone());
+		let gid0b = groups.insert(o12.clone());
+		assert_eq!(gid0, gid0b);
+		assert_eq!(gid0.anchor(), a0);
+		assert_eq!(groups.groups.len(), 1);
+		assert_eq!(groups.by_signer.len(), 3);
+
+		// Remove o01; s0 vanishes; {s1,s2} remains connected.
+		let res = groups.remove(o01.hash());
+		let RemoveResult::Updated(new_gid) = res else {
+			panic!("expected Updated");
+		};
+
+		// Anchor should change to s1 and epoch bump by +1
+		assert_eq!(new_gid.anchor(), a1);
+		assert_eq!(new_gid.epoch(), gid0.epoch() + 1);
+
+		// State reflects the change
+		assert_eq!(groups.groups.len(), 1);
+		assert!(groups.by_signer.get(&a0).is_none());
+		assert!(groups.by_signer.get(&a1).is_some());
+		assert!(groups.by_signer.get(&a2).is_some());
+		assert!(groups.by_order.get(&o12.hash()).is_some());
+		assert_eq!(groups.by_order.len(), 1);
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn remove_bridge_splits_into_two_groups<
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+	>() {
+		// s0 < s1 < s2 < s3
+		let signers = (0..4)
+			.map(FundedAccounts::signer)
+			.sorted_by(|a, b| a.address().cmp(&b.address()))
+			.collect::<Vec<_>>();
+		let a0 = signers[0].address();
+		let a1 = signers[1].address();
+		let a2 = signers[2].address();
+		let a3 = signers[3].address();
+
+		// o01: {s0, s1}
+		let o01 = {
+			let tx0 = make_tx::<P>(&FundedAccounts::by_address(a0).unwrap(), 0);
+			let tx1 = make_tx::<P>(&FundedAccounts::by_address(a1).unwrap(), 0);
+			let bundle = FlashbotsBundle::<P>::default()
+				.with_transaction(tx0)
+				.with_transaction(tx1);
+			let po: PooledOrder<P> = Order::Bundle(bundle).into();
+			po
+		};
+
+		// o23: {s2, s3}
+		let o23 = {
+			let tx2 = make_tx::<P>(&FundedAccounts::by_address(a2).unwrap(), 0);
+			let tx3 = make_tx::<P>(&FundedAccounts::by_address(a3).unwrap(), 0);
+			let bundle = FlashbotsBundle::<P>::default()
+				.with_transaction(tx2)
+				.with_transaction(tx3);
+			let po: PooledOrder<P> = Order::Bundle(bundle).into();
+			po
+		};
+
+		// o12 (bridge): {s1, s2}
+		let o12 = {
+			let tx1b = make_tx::<P>(&FundedAccounts::by_address(a1).unwrap(), 1);
+			let tx2b = make_tx::<P>(&FundedAccounts::by_address(a2).unwrap(), 1);
+			let bundle = FlashbotsBundle::<P>::default()
+				.with_transaction(tx1b)
+				.with_transaction(tx2b);
+			let po: PooledOrder<P> = Order::Bundle(bundle).into();
+			po
+		};
+
+		let mut groups = Groups::<P>::default();
+		let gid0 = groups.insert(o01.clone());
+		let gid1 = groups.insert(o23.clone());
+		assert_ne!(gid0, gid1);
+		// merge by inserting the bridge into the pool
+		let gid_final = groups.insert(o12.clone());
+		assert_eq!(groups.groups.len(), 1);
+
+		// Remove the bridge; expect a split
+		let res = groups.remove(o12.hash());
+		let RemoveResult::Split(child_ids) = res else {
+			panic!("expected Split");
+		};
+		assert_eq!(child_ids.len(), 2);
+
+		// Anchors should be s0 and s2; both with epoch = parent.epoch + 1
+		let anchors = child_ids
+			.iter()
+			.map(|id| id.anchor())
+			.sorted()
+			.collect::<Vec<_>>();
+		assert_eq!(anchors, vec![a0, a2]);
+		for id in child_ids {
+			assert_eq!(id.epoch(), gid_final.epoch() + 1);
+		}
+
+		// Indexes reflect two groups and two orders
+		assert_eq!(groups.groups.len(), 2);
+		assert_eq!(groups.by_order.len(), 2);
+
+		// Each signer maps to the correct child
+		let gid_left = *groups.by_signer.get(&a0).unwrap();
+		assert_eq!(gid_left, *groups.by_signer.get(&a1).unwrap());
+		let gid_right = *groups.by_signer.get(&a2).unwrap();
+		assert_eq!(gid_right, *groups.by_signer.get(&a3).unwrap());
+		assert_ne!(gid_left, gid_right);
+
+		// Orders present in their respective groups
+		assert_eq!(groups.by_order.get(&o01.hash()), Some(&gid_left));
+		assert_eq!(groups.by_order.get(&o23.hash()), Some(&gid_right));
 	}
 }
