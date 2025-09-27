@@ -1,4 +1,4 @@
-use std::{cmp::min, marker::PhantomData, sync::Arc, time::Instant};
+use std::{cmp::min, marker::PhantomData, time::Instant};
 
 use alloy_primitives::Address;
 use dashmap::DashMap;
@@ -14,6 +14,7 @@ pub mod args;
 pub mod error;
 mod metrics;
 
+
 pub use args::GasLimiterArgs;
 pub use error::GasLimitError;
 
@@ -25,9 +26,7 @@ pub struct AddressGasLimiter {
 #[derive(Debug, Clone)]
 struct AddressGasLimiterInner {
     config: GasLimiterArgs,
-    // We don't need an Arc<Mutex<_>> here, we can get away with RefCell, but
-    // the reth PayloadBuilder trait needs this to be Send + Sync
-    address_buckets: Arc<DashMap<Address, TokenBucket>>,
+    address_buckets: DashMap<Address, TokenBucket>,
     metrics: GasLimiterMetrics,
 }
 
@@ -65,7 +64,7 @@ impl<P: Platform> GasLimitFilter<P> {
 		use std::sync::atomic::{AtomicU64, Ordering};
 		
 		// Track the last block number we refreshed for
-		let last_refreshed_block = Arc::new(AtomicU64::new(0));
+		let last_refreshed_block = AtomicU64::new(0);
 		
 		move |payload: &Checkpoint<P>, order: &Order<P>| -> bool {
 			// Get current block number from the payload's context
@@ -292,5 +291,35 @@ mod tests {
         assert!(limiter.consume_gas(searcher1, 1_000_000).is_ok()); // Had 9.5M + 1M refill, now 9.5M
         assert!(limiter.consume_gas(searcher2, 1_000_000).is_ok()); // Had 9.25M + 1M refill, now 9.25M  
         assert!(limiter.consume_gas(attacker, 1_000_000).is_ok()); // Had 5M + 1M refill, now 5M
+    }
+
+    #[test]
+    fn test_gas_limit_filter_creation() {
+        // Test that we can create a gas limit filter
+        let config = create_test_config(100_000, 25_000, 10);
+        let filter = GasLimitFilter::<crate::platform::Ethereum>::new(config);
+        
+        // Test that we can create the filter closure
+        let _filter_fn = filter.create_filter();
+        
+        // This test mainly ensures the types compile correctly
+        assert!(true);
+    }
+
+    #[test] 
+    fn test_disabled_gas_limiter() {
+        // Test that disabled gas limiter allows all transactions
+        let config = GasLimiterArgs {
+            gas_limiter_enabled: false,
+            max_gas_per_address: 1, // Very low limit, should be ignored
+            refill_rate_per_block: 1,
+            cleanup_interval: 10,
+        };
+        
+        let limiter = AddressGasLimiter::new(config);
+        
+        // Should allow any amount of gas when disabled
+        assert!(limiter.consume_gas(test_address(), 1_000_000).is_ok());
+        assert!(limiter.consume_gas(test_address(), 1_000_000).is_ok());
     }
 }
