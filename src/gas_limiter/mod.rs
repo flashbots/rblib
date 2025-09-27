@@ -187,7 +187,7 @@ impl AddressGasLimiterInner {
         });
 
         // Only clean up stale buckets every `cleanup_interval` blocks
-        if block_number % self.config.cleanup_interval == 0 {
+        if block_number % self.config.cleanup_interval_blocks == 0 {
             self.address_buckets
                 .retain(|_, bucket| bucket.available <= bucket.capacity);
         }
@@ -223,7 +223,7 @@ mod tests {
             gas_limiter_enabled: true,
             max_gas_per_address: max_gas,
             refill_rate_per_block: refill_rate,
-            cleanup_interval,
+            cleanup_interval_blocks: cleanup_interval,
         }
     }
 
@@ -313,7 +313,7 @@ mod tests {
             gas_limiter_enabled: false,
             max_gas_per_address: 1, // Very low limit, should be ignored
             refill_rate_per_block: 1,
-            cleanup_interval: 10,
+            cleanup_interval_blocks: 10,
         };
         
         let limiter = AddressGasLimiter::new(config);

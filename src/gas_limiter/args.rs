@@ -24,5 +24,5 @@ pub struct GasLimiterArgs {
 
     /// How many blocks to wait before cleaning up stale buckets for addresses.
     #[arg(long = "gas-limiter.cleanup-interval", env, default_value = "100")]
-    pub cleanup_interval: u64,
+    pub cleanup_interval_blocks: u64,
 }
