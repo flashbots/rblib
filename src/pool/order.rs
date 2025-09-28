@@ -1,19 +1,14 @@
 use {
 	super::*,
-	crate::{
-		alloy,
-		pool::group::{Group, Groups},
-		reth,
-	},
+	crate::{alloy, reth},
 	alloy::{
 		consensus::{Transaction, crypto::RecoveryError},
 		primitives::{Address, B256},
 	},
-	core::{ops::Deref, sync::atomic::AtomicUsize},
+	core::ops::Deref,
 	nonce::Nonce,
 	reth::{ethereum::primitives::SignedTransaction, primitives::Recovered},
 	rustc_hash::FxHashSet,
-	std::collections::{HashMap, HashSet},
 };
 
 pub type OrderHash = B256;

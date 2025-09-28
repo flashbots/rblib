@@ -1,5 +1,5 @@
 use {
-	super::{graph::OrderGraph, *},
+	super::*,
 	core::{
 		pin::Pin,
 		task::{Context, Poll, Waker},
