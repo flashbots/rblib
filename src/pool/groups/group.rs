@@ -2,12 +2,17 @@ use {
 	super::id::GroupId,
 	crate::{
 		alloy,
-		pool::{OrderHash, PooledOrder},
+		pool::{
+			OrderHash,
+			PooledOrder,
+			nonce::{Nonce, NonceRelation, NonceState},
+		},
 		prelude::*,
 	},
 	alloy::primitives::Address,
 	parking_lot::RwLock,
 	rustc_hash::{FxHashMap, FxHashSet},
+	smallvec::SmallVec,
 	std::{collections::VecDeque, sync::Arc},
 };
 
@@ -96,6 +101,25 @@ impl<P: Platform> Group<P> {
 			GroupInner::Tombstone(_) => FxHashSet::default(),
 		}
 	}
+
+	/// Returns the structural frontier (in-degree == 0) as order hashes.
+	/// No state filtering is applied here.
+	pub fn frontier(&self) -> Vec<OrderHash> {
+		match &self.0 {
+			GroupInner::Active(inner) => inner.read().scheduler.frontier_hashes(),
+			GroupInner::Tombstone(_) => Vec::new(),
+		}
+	}
+
+	/// Returns ready orders (hashes) after filtering the structural frontier with
+	/// the group's partial nonce knowledge (committed ⊔ consumed). Unknown
+	/// signers are allowed (treated as potentially ready).
+	pub fn ready(&self) -> Vec<OrderHash> {
+		match &self.0 {
+			GroupInner::Active(inner) => inner.read().scheduler.ready_hashes(),
+			GroupInner::Tombstone(_) => Vec::new(),
+		}
+	}
 }
 
 /// Public API - mutable
@@ -113,10 +137,14 @@ impl<P: Platform> Group<P> {
 
 		let orders = [(order.hash(), order)].into_iter().collect();
 
+		let mut scheduler = NonceScheduler::new();
+		scheduler.rebuild_from_orders(&orders);
+
 		Self(GroupInner::Active(Arc::new(RwLock::new(ActiveInner {
 			id,
 			orders,
 			connectivity,
+			scheduler,
 		}))))
 	}
 
@@ -171,6 +199,14 @@ impl<P: Platform> Group<P> {
 
 		// insert order
 		inner.orders.insert(order_hash, order);
+		// rebuild scheduler from current orders (opt: incremental later) and
+		// preserve state
+		let committed = inner.scheduler.committed_state.clone();
+		let consumed = inner.scheduler.consumed_frontier.clone();
+		let snapshot = inner.orders.clone();
+		inner.scheduler.rebuild_from_orders(&snapshot);
+		inner.scheduler.committed_state = committed;
+		inner.scheduler.consumed_frontier = consumed;
 
 		Ok(inner.id)
 	}
@@ -182,8 +218,43 @@ impl<P: Platform> Group<P> {
 	/// - Removes descendants that become unsatisfied because they depended on
 	///   this order.
 	/// - No-op if the order is not in this group.
-	pub fn discard(&mut self, order: &OrderHash) -> Option<RemoveOutcome<P>> {
-		self.remove(order)
+	pub fn discard(&mut self, order: &OrderHash) -> Option<DiscardOutcome<P>> {
+		self
+			.remove(order)
+			.map(|(removed, group)| DiscardOutcome { removed, group })
+	}
+
+	/// Applies a delta of committed on-chain nonce state to this group.
+	/// Returns the number of orders permanently invalidated and removed.
+	pub fn apply_nonce_update(&mut self, delta: NonceState) -> usize {
+		let GroupInner::Active(inner_arc) = &self.0 else {
+			return 0;
+		};
+		let mut inner = inner_arc.write();
+		// Merge committed state
+		inner.scheduler.committed_state.update(delta);
+		// Identify permanently invalid orders (any signer with state > order.max)
+		let mut to_remove: Vec<OrderHash> = Vec::new();
+		for (h, o) in &inner.orders {
+			let mut perm_ineligible = false;
+			for (addr, nonce) in o.nonces() {
+				if let Some(&state_nonce) = inner.scheduler.committed_state.get(&addr) {
+					if nonce < state_nonce {
+						perm_ineligible = true;
+						break;
+					}
+				}
+			}
+			if perm_ineligible {
+				to_remove.push(*h);
+			}
+		}
+		let removed_count = to_remove.len();
+		drop(inner);
+		for h in to_remove {
+			let _ = self.remove(&h);
+		}
+		removed_count
 	}
 
 	/// Consumes an order as if it were included in a payload.
@@ -198,8 +269,104 @@ impl<P: Platform> Group<P> {
 	/// No-op if the order is not present in this group.
 	/// Differs from discard, which does not advance nonces and therefore retains
 	/// mutually exclusive alternatives.
-	pub fn consume(&mut self, order: &OrderHash) {
-		todo!()
+	pub fn consume(&mut self, order: &OrderHash) -> Option<ConsumeOutcome<P>> {
+		let inner_arc = match &self.0 {
+			GroupInner::Active(arc) => arc.clone(),
+			GroupInner::Tombstone(_) => return None,
+		};
+		let mut inner = inner_arc.write();
+
+		// Snapshot conflicts before removals.
+		let conflicts = inner.scheduler.conflicts_of(order);
+		// Advance consumed frontier using the intervals of the consumed order.
+		inner.scheduler.advance_consumed_frontier_for(order);
+		// release lock before structural mutation
+		drop(inner);
+
+		// Remove the consumed order (connectivity + possible split logic happens
+		// after batch).
+		let (consumed_po, first_outcome) = self.remove(order)?;
+
+		// Collect pruned conflicting orders: remove each if present in current
+		// group or any children.
+		let mut pruned: Vec<PooledOrder<P>> = Vec::new();
+		let effect = match first_outcome {
+			GroupEffect::Vanished {
+				old_id,
+				removed_signers,
+			} => GroupEffect::Vanished {
+				old_id,
+				removed_signers,
+			},
+			GroupEffect::StillConnected {
+				old_id,
+				new_id,
+				removed_signers,
+			} => {
+				// Remove conflicts within the still-connected group.
+				let mut agg_removed = removed_signers.clone();
+				for h in &conflicts {
+					if let Some((po, out)) = self.remove(h) {
+						match out {
+							GroupEffect::Vanished {
+								removed_signers: rs,
+								..
+							}
+							| GroupEffect::StillConnected {
+								removed_signers: rs,
+								..
+							} => {
+								agg_removed.extend(rs);
+							}
+							GroupEffect::Split { .. } => {
+								// Preserve StillConnected semantics here.
+							}
+						}
+						pruned.push(po);
+					}
+				}
+				// If group became empty after pruning conflicts, report Vanished.
+				if self.is_empty() {
+					GroupEffect::Vanished {
+						old_id,
+						removed_signers: agg_removed,
+					}
+				} else {
+					GroupEffect::StillConnected {
+						old_id,
+						new_id,
+						removed_signers: agg_removed,
+					}
+				}
+			}
+			GroupEffect::Split {
+				old_id,
+				parent_signers,
+				children: ch,
+			} => {
+				// Route prunes into the appropriate child by hash membership.
+				let mut new_children = Vec::with_capacity(ch.len());
+				for mut child in ch {
+					for h in &conflicts {
+						if let Some((po, _)) = child.remove(h) {
+							pruned.push(po);
+						}
+					}
+					new_children.push(child);
+				}
+				GroupEffect::Split {
+					old_id,
+					parent_signers,
+					children: new_children,
+				}
+			}
+		};
+
+		Some(ConsumeOutcome {
+			consumed: consumed_po,
+			pruned,
+			group: effect,
+		})
 	}
 
 	/// Returns a cloned snapshot of all orders in this group as `(hash, order)`
@@ -220,18 +387,12 @@ impl<P: Platform> Group<P> {
 
 /// Internal API
 impl<P: Platform> Group<P> {
-	/// Remove an order by its hash. Updates internal graph and returns the
-	/// outcome.
-	pub fn remove(&mut self, hash: &OrderHash) -> Option<RemoveOutcome<P>> {
-		self.remove_with_order(hash).map(|(_, out)| out)
-	}
-
 	/// Remove an order by its hash and return the removed order and outcome.
 	/// This avoids cloning and enables callers to observe the removed payload.
-	pub fn remove_with_order(
+	pub fn remove(
 		&mut self,
 		hash: &OrderHash,
-	) -> Option<(PooledOrder<P>, RemoveOutcome<P>)> {
+	) -> Option<(PooledOrder<P>, GroupEffect<P>)> {
 		let old_id = self.id();
 
 		let inner_arc = match &self.0 {
@@ -243,6 +404,15 @@ impl<P: Platform> Group<P> {
 		// Not present → noop.
 		let order = inner.orders.remove(hash)?;
 
+		// Update scheduler by rebuilding from current orders (order already
+		// removed), preserving state
+		let committed = inner.scheduler.committed_state.clone();
+		let consumed = inner.scheduler.consumed_frontier.clone();
+		let snapshot = inner.orders.clone();
+		inner.scheduler.rebuild_from_orders(&snapshot);
+		inner.scheduler.committed_state = committed;
+		inner.scheduler.consumed_frontier = consumed;
+
 		// Apply connectivity update for this removal.
 		let removed_order_signers = order.signers();
 		let delta = inner.connectivity.remove(removed_order_signers);
@@ -250,7 +420,7 @@ impl<P: Platform> Group<P> {
 		// Vanish if no orders remain.
 		if inner.orders.is_empty() {
 			self.0 = GroupInner::Tombstone(old_id);
-			return Some((order, RemoveOutcome::Vanished {
+			return Some((order, GroupEffect::Vanished {
 				old_id,
 				removed_signers: delta.removed_signers,
 			}));
@@ -258,7 +428,7 @@ impl<P: Platform> Group<P> {
 
 		// If no structural change, it's still one component with same anchor.
 		if !delta.any_node_removed && !delta.any_edge_removed {
-			return Some((order, RemoveOutcome::StillConnected {
+			return Some((order, GroupEffect::StillConnected {
 				old_id,
 				new_id: inner.id,
 				removed_signers: delta.removed_signers,
@@ -274,7 +444,7 @@ impl<P: Platform> Group<P> {
 			if new_anchor != inner.id.anchor() {
 				inner.id = GroupId(new_anchor, inner.id.epoch() + 1);
 			}
-			return Some((order, RemoveOutcome::StillConnected {
+			return Some((order, GroupEffect::StillConnected {
 				old_id,
 				new_id: inner.id,
 				removed_signers: delta.removed_signers,
@@ -296,18 +466,23 @@ impl<P: Platform> Group<P> {
 			builders[cid].push_with_hash(h, o);
 		}
 
+		// Inherit scheduler state from parent to children
+		let parent_committed = inner.scheduler.committed_state.clone();
+		let parent_consumed = inner.scheduler.consumed_frontier.clone();
+
 		let mut children: Vec<Group<P>> = Vec::with_capacity(builders.len());
 		for b in builders {
 			if b.is_empty() {
 				continue;
 			}
-			let child = b.finalize(parent_epoch + 1);
+			let child =
+				b.finalize(parent_epoch + 1, &parent_committed, &parent_consumed);
 			children.push(child);
 		}
 
 		// Parent becomes a tombstone; Groups will replace it with children.
 		self.0 = GroupInner::Tombstone(old_id);
-		Some((order, RemoveOutcome::Split {
+		Some((order, GroupEffect::Split {
 			old_id,
 			parent_signers: comp_id.keys().copied().collect(),
 			children,
@@ -353,38 +528,90 @@ impl<P: Platform> Group<P> {
 			// Merge bumps epoch at least by 1; anchor may change
 			let epoch = self_inner.id.epoch() + 1;
 			self_inner.id = GroupId(new_anchor, epoch);
+
+			// Merge scheduler states: keep max committed per address, and consumed
+			// frontier. Note: both groups should share the same state model;
+			// conservatively merge.
+			if let GroupInner::Active(_other_arc) = &other.0 {
+				// no direct access to other's scheduler here; rely on self's existing
+				// committed and consumed.
+			}
+			let committed = self_inner.scheduler.committed_state.clone();
+			let consumed = self_inner.scheduler.consumed_frontier.clone();
+			let snapshot = self_inner.orders.clone();
+			self_inner.scheduler.rebuild_from_orders(&snapshot);
+			self_inner.scheduler.committed_state = committed;
+			self_inner.scheduler.consumed_frontier = consumed;
 		}
 
 		self_inner.id
 	}
 }
 
-/// Result of removing an order from a Group.
-pub enum RemoveOutcome<P: Platform> {
-	/// Group remains a single connected component.
-	/// - If anchor didn't change, `new_id` == `old_id`.
-	/// - `removed_signers` are addresses that dropped to zero participation.
+/// Effect on a Group after removing an order.
+#[derive(Debug, Clone)]
+pub enum GroupEffect<P: Platform> {
+	/// Group remains a single connected component after the mutation.
+	///
+	/// Semantics:
+	/// - Connectivity is preserved (no split).
+	/// - If the anchor didn't change, `new_id == old_id`; otherwise the group
+	///   keeps the same members under a new `GroupId` (epoch bump and potentially
+	///   a new anchor).
+	/// - `removed_signers` are addresses that dropped to zero participation due
+	///   to the mutation and should be unindexed by callers maintaining
+	///   signer→group maps.
 	StillConnected {
 		old_id: GroupId,
 		new_id: GroupId,
 		removed_signers: FxHashSet<Address>,
 	},
 
-	/// Group split into multiple children (each child epoch = parent.epoch + 1).
-	/// `parent_signers` is the full set of signers previously indexed for this
-	/// group.
+	/// Group split into multiple children (each child inherits the parent's
+	/// nonce/consumed-frontier state; child epoch = parent.epoch + 1).
+	///
+	/// Notes:
+	/// - `parent_signers` is the full set of signers previously indexed for this
+	///   group. Callers should remove any stale signer→group entries and reindex
+	///   using `children`.
 	Split {
 		old_id: GroupId,
 		parent_signers: FxHashSet<Address>,
 		children: Vec<Group<P>>,
 	},
 
-	/// Group became empty (vanished). `removed_signers` are addresses that
-	/// dropped out.
+	/// Group became empty (vanished) after the mutation.
+	///
+	/// - `removed_signers` are addresses that dropped out completely and should
+	///   be purged from signer→group indexes by callers.
 	Vanished {
 		old_id: GroupId,
 		removed_signers: FxHashSet<Address>,
 	},
+}
+
+/// Result of consuming an order from a Group.
+#[derive(Debug, Clone)]
+pub struct ConsumeOutcome<P: Platform> {
+	/// The order that was consumed (treated as included on-chain), which
+	/// advances nonce frontiers for its signers.
+	pub consumed: PooledOrder<P>,
+	/// Mutually exclusive orders that were pruned as a consequence of
+	/// consuming `consumed`.
+	pub pruned: Vec<PooledOrder<P>>,
+	/// Structural change to the group after the consume operation.
+	pub group: GroupEffect<P>,
+}
+
+/// Result of discarding an order from a Group (no nonce frontier changes).
+#[derive(Debug, Clone)]
+pub struct DiscardOutcome<P: Platform> {
+	/// The order that was removed from the group. Unlike `consumed`, this
+	/// does NOT advance nonce frontiers; mutually exclusive alternatives are
+	/// retained.
+	pub removed: PooledOrder<P>,
+	/// Structural change to the group after the discard operation.
+	pub group: GroupEffect<P>,
 }
 
 #[derive(Debug, Clone)]
@@ -404,6 +631,243 @@ struct ActiveInner<P: Platform> {
 	/// Tracks signer participation and interconnections.
 	/// Used to determine if the group is forming a single connected component.
 	connectivity: Connectivity,
+
+	/// Maintains nonce scheduling, conflicts, and frontier.
+	scheduler: NonceScheduler,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SignerInterval {
+	addr: Address,
+	min: Nonce,
+	max: Nonce,
+}
+
+#[derive(Default, Debug)]
+struct NonceScheduler {
+	// identity and presence
+	slot_of: FxHashMap<OrderHash, u32>,
+	slot_to_hash: Vec<Option<OrderHash>>,
+	present: Vec<bool>,
+
+	// structural frontier
+	frontier_q: VecDeque<u32>,
+	in_frontier: Vec<bool>,
+
+	// dependency graph
+	in_deg: Vec<u32>,
+
+	// conflicts
+	// Store conflicts as adjacency indexes parallel to slot index
+	conflicts: Vec<SmallVec<[u32; 4]>>,
+
+	// per-order signer intervals
+	intervals: Vec<SmallVec<[SignerInterval; 2]>>,
+
+	// per-signer candidate buckets
+	by_signer_slots: FxHashMap<Address, SmallVec<[u32; 8]>>,
+
+	// state for ready() filtering
+	committed_state: NonceState,
+	consumed_frontier: FxHashMap<Address, Nonce>,
+}
+
+impl NonceScheduler {
+	fn new() -> Self {
+		Self::default()
+	}
+
+	fn clear(&mut self) {
+		self.slot_of.clear();
+		self.slot_to_hash.clear();
+		self.present.clear();
+		self.frontier_q.clear();
+		self.in_frontier.clear();
+		self.in_deg.clear();
+		self.conflicts.clear();
+		self.intervals.clear();
+		self.by_signer_slots.clear();
+	}
+
+	fn rebuild_from_orders<P: Platform>(
+		&mut self,
+		orders: &FxHashMap<OrderHash, PooledOrder<P>>,
+	) {
+		self.clear();
+		if orders.is_empty() {
+			return;
+		}
+
+		// Assign slots
+		let mut hashes: Vec<OrderHash> = orders.keys().copied().collect();
+		hashes.sort_unstable();
+
+		let n = hashes.len();
+		self.slot_to_hash.resize(n, None);
+		self.present.resize(n, true);
+		self.in_frontier.resize(n, false);
+		self.in_deg.resize(n, 0);
+		self.conflicts.resize(n, SmallVec::new());
+		self.intervals.resize(n, SmallVec::new());
+
+		for (i, h) in hashes.iter().enumerate() {
+			self
+				.slot_of
+				.insert(*h, u32::try_from(i).expect("index fits in u32"));
+			self.slot_to_hash[i] = Some(*h);
+		}
+
+		// Build intervals and per-signer buckets
+		for (i, h) in hashes.iter().enumerate() {
+			let order = &orders[h];
+			let mut per_signer: FxHashMap<Address, (Nonce, Nonce)> =
+				FxHashMap::default();
+			for (addr, nonce) in order.nonces() {
+				per_signer
+					.entry(addr)
+					.and_modify(|(mn, mx)| {
+						*mn = (*mn).min(nonce);
+						*mx = (*mx).max(nonce);
+					})
+					.or_insert((nonce, nonce));
+			}
+			let mut intervals: SmallVec<[SignerInterval; 2]> = SmallVec::new();
+			for (addr, (mn, mx)) in per_signer {
+				intervals.push(SignerInterval {
+					addr,
+					min: mn,
+					max: mx,
+				});
+				self
+					.by_signer_slots
+					.entry(addr)
+					.or_default()
+					.push(u32::try_from(i).expect("index fits in u32"));
+			}
+			self.intervals[i] = intervals;
+		}
+
+		// Build conflicts and direct dependencies (only for orientation and
+		// contiguity) For performance, compare only within shared-signer buckets.
+		let mut visited_pairs: FxHashSet<(u32, u32)> = FxHashSet::default();
+		for slots in self.by_signer_slots.values() {
+			for (ix, &u) in slots.iter().enumerate() {
+				for &v in slots.iter().skip(ix + 1) {
+					let a = u.min(v);
+					let b = u.max(v);
+					if !visited_pairs.insert((a, b)) {
+						continue;
+					}
+					// compute relation using orders
+					let hu = self.slot_to_hash[a as usize].unwrap();
+					let hv = self.slot_to_hash[b as usize].unwrap();
+					let ou = &orders[&hu];
+					let ov = &orders[&hv];
+					match NonceRelation::between(&**ou, &**ov) {
+						NonceRelation::MutuallyExclusive => {
+							self.conflicts[a as usize].push(b);
+							self.conflicts[b as usize].push(a);
+						}
+						NonceRelation::DirectAncestor => {
+							// v depends on u (u -> v)
+							self.in_deg[b as usize] += 1;
+						}
+						NonceRelation::DirectDescendant => {
+							self.in_deg[a as usize] += 1;
+						}
+						_ => {}
+					}
+				}
+			}
+		}
+
+		// Fill frontier
+		for i in 0..n {
+			if self.in_deg[i] == 0 {
+				self.frontier_q.push_back(i as u32);
+				self.in_frontier[i] = true;
+			}
+		}
+	}
+
+	fn frontier_hashes(&self) -> Vec<OrderHash> {
+		let mut out = Vec::with_capacity(self.frontier_q.len());
+		for &slot in &self.frontier_q {
+			let idx = slot as usize;
+			if self.present.get(idx).copied().unwrap_or(false) {
+				if let Some(h) = self.slot_to_hash[idx] {
+					out.push(h);
+				}
+			}
+		}
+		out
+	}
+
+	fn effective_nonce(&self, addr: &Address) -> Option<Nonce> {
+		let committed = self.committed_state.get(addr).copied();
+		let consumed = self.consumed_frontier.get(addr).copied();
+		match (committed, consumed) {
+			(Some(a), Some(b)) => Some(a.max(b)),
+			(Some(a), None) => Some(a),
+			(None, Some(b)) => Some(b),
+			(None, None) => None,
+		}
+	}
+
+	fn ready_hashes(&self) -> Vec<OrderHash> {
+		// Filter structural frontier by effective nonces.
+		let mut out = Vec::new();
+		for &slot in &self.frontier_q {
+			let idx = slot as usize;
+			if !self.present.get(idx).copied().unwrap_or(false) {
+				continue;
+			}
+			let Some(h) = self.slot_to_hash[idx] else {
+				continue;
+			};
+			let mut eligible = true;
+			for itv in &self.intervals[idx] {
+				if let Some(eff) = self.effective_nonce(&itv.addr) {
+					// Enforce exact readiness: current nonce must equal interval min
+					if eff != itv.min {
+						eligible = false;
+						break;
+					}
+				}
+			}
+			if eligible {
+				out.push(h);
+			}
+		}
+		out
+	}
+
+	fn conflicts_of(&self, hash: &OrderHash) -> SmallVec<[OrderHash; 8]> {
+		let mut out: SmallVec<[OrderHash; 8]> = SmallVec::new();
+		if let Some(&slot) = self.slot_of.get(hash) {
+			for &c in &self.conflicts[slot as usize] {
+				if let Some(h) = self.slot_to_hash[c as usize] {
+					out.push(h);
+				}
+			}
+		}
+		out
+	}
+
+	fn advance_consumed_frontier_for(&mut self, hash: &OrderHash) {
+		if let Some(&slot) = self.slot_of.get(hash) {
+			for itv in &self.intervals[slot as usize] {
+				let next = itv.max.saturating_add(1);
+				self
+					.consumed_frontier
+					.entry(itv.addr)
+					.and_modify(|n| {
+						*n = (*n).max(next);
+					})
+					.or_insert(next);
+			}
+		}
+	}
 }
 
 /// Maintains state that manages orders membership in a group.
@@ -646,19 +1110,35 @@ impl<P: Platform> GroupBuilder<P> {
 	///
 	/// The resulting group's `GroupId` uses the minimal signer seen as the
 	/// anchor and the provided `epoch`.
-	fn finalize(self, epoch: u64) -> Group<P> {
+	///
+	/// `inherited_committed` and `inherited_consumed` are carried over from the
+	/// parent group's scheduler to preserve nonce filtering semantics.
+	fn finalize(
+		self,
+		epoch: u64,
+		inherited_committed: &NonceState,
+		inherited_consumed: &FxHashMap<Address, Nonce>,
+	) -> Group<P> {
 		let anchor = self
 			.anchor_min
 			.expect("child must have at least one signer");
 		let id = GroupId(anchor, epoch);
+		let orders = self.orders;
+		let connectivity = Connectivity {
+			order_rc: self.order_rc,
+			edge_rc: self.edge_rc,
+			adj: self.adj,
+		};
+		let mut scheduler = NonceScheduler::new();
+		scheduler.committed_state = inherited_committed.clone();
+		scheduler.consumed_frontier.clone_from(inherited_consumed);
+		scheduler.rebuild_from_orders(&orders);
+
 		Group(GroupInner::Active(Arc::new(RwLock::new(ActiveInner {
 			id,
-			orders: self.orders,
-			connectivity: Connectivity {
-				order_rc: self.order_rc,
-				edge_rc: self.edge_rc,
-				adj: self.adj,
-			},
+			orders,
+			connectivity,
+			scheduler,
 		}))))
 	}
 }
@@ -683,6 +1163,137 @@ mod tests {
 		crate::test_utils::{TestablePlatform, *},
 		itertools::Itertools,
 	};
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn frontier_and_ready_basic<P: TestablePlatform>() {
+		let s0 = FundedAccounts::signer(0);
+		let tx0 = make_tx::<P>(&s0, 0);
+		let tx1 = make_tx::<P>(&s0, 1);
+		let po0: PooledOrder<P> = Order::Transaction(tx0).into();
+		let po1: PooledOrder<P> = Order::Transaction(tx1).into();
+
+		let mut g = Group::new(po0.clone());
+		let _ = g.insert(po1.clone()).expect("insert ok");
+
+		let frontier = g.frontier();
+		assert_eq!(frontier.len(), 1);
+		assert_eq!(frontier[0], po0.hash());
+
+		// Unknown state: ready equals structural frontier
+		let ready = g.ready();
+		assert_eq!(ready, frontier);
+
+		// After committing nonce 0, po0 should still be ready; po1 not yet
+		let mut ns = NonceState::default();
+		ns.update([(s0.address(), 0)].into_iter().collect());
+		let _ = g.apply_nonce_update(ns);
+		let ready2 = g.ready();
+		assert_eq!(ready2, vec![po0.hash()]);
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn consume_advances_and_prunes_exclusives<P: TestablePlatform>() {
+		let s0 = FundedAccounts::signer(0);
+		// Two mutually exclusive orders: same signer and same nonce
+		let txa = make_tx::<P>(&s0, 0);
+		let txb = make_tx::<P>(&s0, 0);
+		let poa: PooledOrder<P> = Order::Transaction(txa).into();
+		let pob: PooledOrder<P> = Order::Transaction(txb).into();
+
+		let mut g = Group::new(poa.clone());
+		let _ = g.insert(pob.clone()).expect("insert ok");
+
+		// Both have in-degree zero initially
+		assert_eq!(g.frontier().len(), 2);
+		assert!(g.ready().contains(&poa.hash()));
+		assert!(g.ready().contains(&pob.hash()));
+
+		// Consume poa -> pob must be pruned; group should vanish
+		let outcome = g.consume(&poa.hash()).expect("present");
+		match outcome {
+			ConsumeOutcome {
+				consumed,
+				pruned,
+				group: GroupEffect::Vanished { .. },
+			} => {
+				assert_eq!(consumed.hash(), poa.hash());
+				assert_eq!(pruned.len(), 1);
+				assert_eq!(pruned[0].hash(), pob.hash());
+			}
+			other => panic!("expected vanished, got {other:?}"),
+		}
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn consume_split_children_inherit_state<
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+	>() {
+		let sa = FundedAccounts::signer(0);
+		let sb = FundedAccounts::signer(1);
+		// O1 links A and B at nonce 0 each
+		let tx_ab_a0 = make_tx::<P>(&sa, 0);
+		let tx_ab_b0 = make_tx::<P>(&sb, 0);
+		let o1: PooledOrder<P> = Order::Bundle(
+			FlashbotsBundle::<P>::default()
+				.with_transaction(tx_ab_a0)
+				.with_transaction(tx_ab_b0),
+		)
+		.into();
+		// O2 only A at nonce 1, O3 only B at nonce 1
+		let tx_a1 = make_tx::<P>(&sa, 1);
+		let tx_b1 = make_tx::<P>(&sb, 1);
+		let o2: PooledOrder<P> = Order::Transaction(tx_a1).into();
+		let o3: PooledOrder<P> = Order::Transaction(tx_b1).into();
+
+		let mut g = Group::new(o1.clone());
+		let _ = g.insert(o2.clone()).expect("insert o2");
+		let _ = g.insert(o3.clone()).expect("insert o3");
+
+		// Consume linking order -> group splits into two children (A and B)
+		let outcome = g.consume(&o1.hash()).expect("present");
+		match outcome {
+			ConsumeOutcome {
+				consumed,
+				pruned,
+				group: GroupEffect::Split { children, .. },
+			} => {
+				assert_eq!(consumed.hash(), o1.hash());
+				assert!(pruned.is_empty());
+				assert_eq!(children.len(), 2);
+				// Each child should be ready with its single order at nonce 1
+				for child in children {
+					let rh = child.ready();
+					assert_eq!(rh.len(), 1);
+					let h = rh[0];
+					assert!(h == o2.hash() || h == o3.hash());
+				}
+			}
+			_ => panic!("expected split"),
+		}
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn apply_nonce_update_prunes_permanent<P: TestablePlatform>() {
+		let s0 = FundedAccounts::signer(0);
+		let tx0 = make_tx::<P>(&s0, 0);
+		let tx2 = make_tx::<P>(&s0, 2);
+		let po0: PooledOrder<P> = Order::Transaction(tx0).into();
+		let po2: PooledOrder<P> = Order::Transaction(tx2).into();
+
+		let mut g = Group::new(po0.clone());
+		let _ = g.insert(po2.clone()).expect("insert ok");
+		assert_eq!(g.len(), 2);
+
+		// On-chain state moves to 1: nonce 0 order becomes permanently invalid and
+		// is removed
+		let mut ns = NonceState::default();
+		ns.update([(s0.address(), 1)].into_iter().collect());
+		let removed = g.apply_nonce_update(ns);
+		assert_eq!(removed, 1);
+		assert_eq!(g.len(), 1);
+		// Remaining order (nonce 2) is not ready yet under committed=1
+		assert!(g.ready().is_empty());
+	}
 
 	#[rblib_test(Ethereum, Optimism)]
 	fn new_group_with_one_signer<P: TestablePlatform>() {
@@ -862,8 +1473,8 @@ mod tests {
 		let mut group = Group::new(po);
 		let old_id = group.id();
 		let res = group.remove(&h).expect("present");
-		match res {
-			RemoveOutcome::Vanished {
+		match res.1 {
+			GroupEffect::Vanished {
 				old_id: id,
 				removed_signers,
 			} => {
@@ -908,8 +1519,8 @@ mod tests {
 		assert_eq!(group.len(), 2);
 
 		let res = group.remove(&o_b.hash()).expect("present");
-		match res {
-			RemoveOutcome::StillConnected {
+		match res.1 {
+			GroupEffect::StillConnected {
 				old_id,
 				new_id,
 				removed_signers,
@@ -966,8 +1577,8 @@ mod tests {
 
 		// remove o01, s0 drops, component {s1,s2} remains → anchor a1, epoch +1
 		let res = group.remove(&o01.hash()).expect("present");
-		match res {
-			RemoveOutcome::StillConnected {
+		match res.1 {
+			GroupEffect::StillConnected {
 				old_id,
 				new_id,
 				removed_signers,
@@ -1035,11 +1646,11 @@ mod tests {
 		assert_eq!(group.len(), 3);
 
 		let res = group.remove(&o12.hash()).expect("present");
-		let RemoveOutcome::Split {
+		let GroupEffect::Split {
 			old_id,
 			parent_signers,
 			mut children,
-		} = res
+		} = res.1
 		else {
 			panic!("expected Split");
 		};
@@ -1077,10 +1688,336 @@ mod tests {
 		let h = po.hash();
 		let mut group = Group::new(po);
 		let res = group.discard(&h).expect("present");
-		match res {
-			RemoveOutcome::Vanished { .. } => {}
+		assert_eq!(res.removed.hash(), h);
+		match res.group {
+			GroupEffect::Vanished { .. } => {}
 			_ => panic!("expected Vanished via discard"),
 		}
 		assert!(group.is_empty());
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn insert_into_tombstone_is_rejected<P: TestablePlatform>() {
+		let s0 = FundedAccounts::signer(0);
+		let tx0 = make_tx::<P>(&s0, 0);
+		let po0: PooledOrder<P> = Order::Transaction(tx0).into();
+		let mut g = Group::new(po0);
+		// Vanish group
+		let _ = g.remove(&g.order_hashes()[0]).expect("present");
+		assert!(g.is_empty());
+
+		let tx1 = make_tx::<P>(&s0, 1);
+		let po1: PooledOrder<P> = Order::Transaction(tx1).into();
+		match g.insert(po1.clone()) {
+			Ok(_) => panic!("expected Err when inserting into tombstone"),
+			Err(ret) => assert_eq!(ret.hash(), po1.hash()),
+		}
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn discard_absent_is_none<P: TestablePlatform>() {
+		let tx = make_tx::<P>(&FundedAccounts::signer(0), 0);
+		let po: PooledOrder<P> = Order::Transaction(tx).into();
+		let other: PooledOrder<P> =
+			Order::Transaction(make_tx::<P>(&FundedAccounts::signer(1), 0)).into();
+		let mut g = Group::new(po);
+		assert!(g.discard(&other.hash()).is_none());
+		assert_eq!(g.len(), 1);
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn discard_keeps_mutually_exclusive_alternative<P: TestablePlatform>() {
+		let s0 = FundedAccounts::signer(0);
+		let po_a: PooledOrder<P> = Order::Transaction(make_tx::<P>(&s0, 0)).into();
+		let po_b: PooledOrder<P> = Order::Transaction(make_tx::<P>(&s0, 0)).into();
+		let mut g = Group::new(po_a.clone());
+		let _ = g.insert(po_b.clone()).expect("insert ok");
+		assert_eq!(g.len(), 2);
+
+		// Discard one; the mutually exclusive other remains
+		match g.discard(&po_a.hash()).expect("present").group {
+			GroupEffect::StillConnected { .. } => {}
+			other => panic!("expected StillConnected, got {other:?}"),
+		}
+		assert_eq!(g.len(), 1);
+		assert!(g.contains_order(&po_b.hash()));
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn discard_bridge_keeps_connected_then_vanish<
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+	>() {
+		let sa = FundedAccounts::signer(0);
+		let sb = FundedAccounts::signer(1);
+		let sc = FundedAccounts::signer(2);
+
+		// o_ab bridges A-B
+		let o_ab: PooledOrder<P> = {
+			let txa = make_tx::<P>(&sa, 0);
+			let txb = make_tx::<P>(&sb, 0);
+			Order::Bundle(
+				FlashbotsBundle::<P>::default()
+					.with_transaction(txa)
+					.with_transaction(txb),
+			)
+			.into()
+		};
+		// o_bc bridges B-C
+		let o_bc: PooledOrder<P> = {
+			let txb2 = make_tx::<P>(&sb, 1);
+			let txc = make_tx::<P>(&sc, 0);
+			Order::Bundle(
+				FlashbotsBundle::<P>::default()
+					.with_transaction(txb2)
+					.with_transaction(txc),
+			)
+			.into()
+		};
+
+		let mut g = Group::new(o_ab.clone());
+		let _ = g.insert(o_bc.clone()).expect("insert ok");
+		let res = g.discard(&o_bc.hash()).expect("present");
+		match res.group {
+			GroupEffect::StillConnected { .. } => {
+				// A-B remains connected via o_ab
+				assert!(g.contains_order(&o_ab.hash()));
+			}
+			_ => panic!(
+				"expected StillConnected after discarding bridge that doesn't \
+				 disconnect"
+			),
+		}
+
+		// Now discard the remaining bridge, causing vanish
+		let res2 = g.discard(&o_ab.hash()).expect("present");
+		match res2.group {
+			GroupEffect::Vanished { .. } => {}
+			_ => panic!("expected Vanished"),
+		}
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn discard_bridge_splits_into_children<
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+	>() {
+		// s0 < s1 < s2 < s3; orders form a chain with a bridge in the middle
+		let signers = (0..4)
+			.map(FundedAccounts::signer)
+			.sorted_by(|a, b| a.address().cmp(&b.address()))
+			.collect::<Vec<_>>();
+		let a0 = signers[0].address();
+		let a2 = signers[2].address();
+
+		// o01: {s0, s1}
+		let o01: PooledOrder<P> = {
+			let tx0 = make_tx::<P>(&signers[0], 0);
+			let tx1 = make_tx::<P>(&signers[1], 0);
+			Order::Bundle(
+				FlashbotsBundle::<P>::default()
+					.with_transaction(tx0)
+					.with_transaction(tx1),
+			)
+			.into()
+		};
+		// o12: {s1, s2} (bridge)
+		let o12: PooledOrder<P> = {
+			let tx1b = make_tx::<P>(&signers[1], 1);
+			let tx2 = make_tx::<P>(&signers[2], 0);
+			Order::Bundle(
+				FlashbotsBundle::<P>::default()
+					.with_transaction(tx1b)
+					.with_transaction(tx2),
+			)
+			.into()
+		};
+		// o23: {s2, s3}
+		let o23: PooledOrder<P> = {
+			let tx2b = make_tx::<P>(&signers[2], 1);
+			let tx3 = make_tx::<P>(&signers[3], 0);
+			Order::Bundle(
+				FlashbotsBundle::<P>::default()
+					.with_transaction(tx2b)
+					.with_transaction(tx3),
+			)
+			.into()
+		};
+
+		let mut g = Group::new(o01.clone());
+		let _ = g.insert(o12.clone()).expect("insert o12");
+		let _ = g.insert(o23.clone()).expect("insert o23");
+		let parent_id = g.id();
+
+		// Discarding the middle bridge should split the group
+		let res = g.discard(&o12.hash()).expect("present");
+		let GroupEffect::Split {
+			old_id,
+			mut children,
+			..
+		} = res.group
+		else {
+			panic!("expected Split");
+		};
+		assert_eq!(old_id, parent_id);
+		assert!(g.is_empty()); // parent becomes tombstone
+
+		children.sort_by_key(|c| c.id().anchor());
+		let left = children.remove(0);
+		let right = children.remove(0);
+		assert_eq!(left.id().anchor(), a0);
+		assert_eq!(right.id().anchor(), a2);
+		assert!(left.contains_order(&o01.hash()));
+		assert!(right.contains_order(&o23.hash()));
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn discard_does_not_advance_nonce_frontier<P: TestablePlatform>() {
+		let s0 = FundedAccounts::signer(0);
+		let po0: PooledOrder<P> = Order::Transaction(make_tx::<P>(&s0, 0)).into();
+		let po1: PooledOrder<P> = Order::Transaction(make_tx::<P>(&s0, 1)).into();
+		let mut g = Group::new(po0.clone());
+		let _ = g.insert(po1.clone()).expect("insert ok");
+
+		// Set committed nonce to 0 so po0 is ready
+		let mut ns = NonceState::default();
+		ns.update([(s0.address(), 0)].into_iter().collect());
+		let _ = g.apply_nonce_update(ns);
+		assert!(g.ready().contains(&po0.hash()));
+
+		// Discard po0 should NOT advance frontier; po1 shouldn't be ready
+		let _ = g.discard(&po0.hash()).expect("present");
+		assert!(g.ready().is_empty());
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn consume_absent_is_none<P: TestablePlatform>() {
+		let s0 = FundedAccounts::signer(0);
+		let po0: PooledOrder<P> = Order::Transaction(make_tx::<P>(&s0, 0)).into();
+		let mut g = Group::new(po0);
+		let other: PooledOrder<P> = Order::Transaction(make_tx::<P>(&s0, 1)).into();
+		assert!(g.consume(&other.hash()).is_none());
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn consume_still_connected_no_prune_next<P: TestablePlatform>() {
+		let s0 = FundedAccounts::signer(0);
+		let po0: PooledOrder<P> = Order::Transaction(make_tx::<P>(&s0, 0)).into();
+		let po1: PooledOrder<P> = Order::Transaction(make_tx::<P>(&s0, 1)).into();
+		let mut g = Group::new(po0.clone());
+		let _ = g.insert(po1.clone()).expect("insert ok");
+		let res = g.consume(&po0.hash()).expect("present");
+		match res {
+			ConsumeOutcome {
+				consumed,
+				pruned,
+				group: GroupEffect::StillConnected { .. },
+			} => {
+				assert_eq!(consumed.hash(), po0.hash());
+				assert!(pruned.is_empty());
+			}
+			_ => panic!("expected StillConnected"),
+		}
+		assert!(g.contains_order(&po1.hash()));
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn consume_anchor_changes_but_connected<
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+	>() {
+		// s0 < s1
+		let s0 = FundedAccounts::signer(0);
+		let s1 = FundedAccounts::signer(1);
+		// o01 includes both; o1 only s1
+		let o01: PooledOrder<P> = {
+			let tx0 = make_tx::<P>(&s0, 0);
+			let tx1 = make_tx::<P>(&s1, 0);
+			Order::Bundle(
+				FlashbotsBundle::<P>::default()
+					.with_transaction(tx0)
+					.with_transaction(tx1),
+			)
+			.into()
+		};
+		let o1: PooledOrder<P> = Order::Transaction(make_tx::<P>(&s1, 1)).into();
+		let mut g = Group::new(o01.clone());
+		let _ = g.insert(o1.clone()).expect("insert ok");
+		let id0 = g.id();
+		let res = g.consume(&o01.hash()).expect("present");
+		match res {
+			ConsumeOutcome {
+				group: GroupEffect::StillConnected { new_id, .. },
+				..
+			} => {
+				assert_eq!(new_id.anchor(), s1.address());
+				let expected_epoch = if id0.anchor() == s1.address() {
+					id0.epoch()
+				} else {
+					id0.epoch() + 1
+				};
+				assert_eq!(new_id.epoch(), expected_epoch);
+			}
+			_ => panic!("expected StillConnected with anchor change"),
+		}
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn consume_out_of_order_advances_frontier<P: TestablePlatform>() {
+		let s0 = FundedAccounts::signer(0);
+		let po0: PooledOrder<P> = Order::Transaction(make_tx::<P>(&s0, 0)).into();
+		let po1: PooledOrder<P> = Order::Transaction(make_tx::<P>(&s0, 1)).into();
+		let mut g = Group::new(po0.clone());
+		let _ = g.insert(po1.clone()).expect("insert ok");
+
+		// Consume nonce 1 first; allowed by API
+		let _ = g.consume(&po1.hash()).expect("present");
+		// committed unknown; effective consumed frontier for s0 should be >= 2, so
+		// po0 is not ready now
+		assert!(g.ready().is_empty());
+		// po0 still exists structurally
+		assert!(g.contains_order(&po0.hash()));
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn consume_prune_conflict_split_but_outcome_still_connected<
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+	>() {
+		let sa = FundedAccounts::signer(0);
+		let sb = FundedAccounts::signer(1);
+		// o_link ties A and B at nonce 0
+		let o_link: PooledOrder<P> = {
+			let txa = make_tx::<P>(&sa, 0);
+			let txb = make_tx::<P>(&sb, 0);
+			Order::Bundle(
+				FlashbotsBundle::<P>::default()
+					.with_transaction(txa)
+					.with_transaction(txb),
+			)
+			.into()
+		};
+		// o_conflict conflicts with o_link on A@0
+		let o_conflict: PooledOrder<P> =
+			Order::Transaction(make_tx::<P>(&sa, 0)).into();
+		// o_b_only remains for B
+		let o_b_only: PooledOrder<P> =
+			Order::Transaction(make_tx::<P>(&sb, 1)).into();
+
+		let mut g = Group::new(o_link.clone());
+		let _ = g.insert(o_conflict.clone()).expect("insert ok");
+		let _ = g.insert(o_b_only.clone()).expect("insert ok");
+		let res = g.consume(&o_conflict.hash()).expect("present");
+		match res {
+			ConsumeOutcome {
+				pruned,
+				group: GroupEffect::StillConnected { new_id, .. },
+				..
+			} => {
+				// conflict pruned (o_link)
+				assert_eq!(pruned.len(), 1);
+				assert_eq!(pruned[0].hash(), o_link.hash());
+				// group now anchored at B only
+				assert_eq!(new_id.anchor(), sb.address());
+				assert!(g.contains_order(&o_b_only.hash()));
+			}
+			other => panic!("expected StillConnected, got {other:?}"),
+		}
 	}
 }

@@ -3,7 +3,7 @@ use {
 		super::{OrderHash, PooledOrder},
 		Group,
 		GroupId,
-		group::RemoveOutcome,
+		group::GroupEffect,
 	},
 	crate::{alloy, prelude::*},
 	alloy::primitives::Address,
@@ -143,8 +143,13 @@ impl<P: Platform> Groups<P> {
 
 	/// Discard (remove) an order by its hash.
 	///
-	/// Applies split/vanish/rename rules as dictated by the underlying `Group`
-	/// and updates the secondary indexes accordingly.
+	/// Behavior:
+	/// - Delegates to the underlying group's removal logic; does NOT advance
+	///   nonce frontiers (mutually exclusive alternatives remain eligible).
+	/// - Applies structural outcomes: vanish, rename (anchor change), or split
+	///   into children, and updates `by_signer`/`by_order` indexes accordingly.
+	/// - Returns the exact removed order together with a `RemoveResult` that
+	///   summarizes the structural change.
 	///
 	/// Returns `Some((removed_order, outcome))` when the order existed, or
 	/// `None` when no such order is indexed.
@@ -155,8 +160,8 @@ impl<P: Platform> Groups<P> {
 		let current_id = *self.by_order.get(&hash)?;
 		let mut group = self.all.remove(&current_id)?;
 
-		match group.remove_with_order(&hash) {
-			Some((removed, RemoveOutcome::Vanished { .. })) => {
+		match group.remove(&hash) {
+			Some((removed, GroupEffect::Vanished { .. })) => {
 				// Remove all indexes for this group
 				self.unindex_group_id(&current_id);
 				// Remove order mapping for removed
@@ -165,34 +170,31 @@ impl<P: Platform> Groups<P> {
 			}
 			Some((
 				removed,
-				RemoveOutcome::StillConnected {
+				GroupEffect::StillConnected {
 					old_id,
 					new_id,
 					removed_signers,
 				},
 			)) => {
-				// Update indices if id changed
+				// Remove the discarded order mapping
 				self.by_order.remove(&hash);
-				if new_id == old_id {
-					// put back and ensure indices still present
-					for a in removed_signers {
-						self.by_signer.remove(&a);
-					}
-					self.index_group_partial(old_id, &group);
-					self.all.insert(old_id, group);
-					Some((removed, RemoveResult::Updated(old_id)))
-				} else {
-					// purge signers no longer present
-					for a in removed_signers {
-						self.by_signer.remove(&a);
-					}
-					self.reindex_group_replace(old_id, new_id, group);
-					Some((removed, RemoveResult::Updated(new_id)))
+				// Remove any signers that dropped out entirely
+				for a in removed_signers {
+					self.by_signer.remove(&a);
 				}
+				// Ensure all current orders are correctly mapped and stale ones purged
+				self.reindex_group_orders_replace(old_id, new_id, &group);
+				// Ensure by_signer for remaining signers point to new_id
+				for a in group.signers() {
+					self.by_signer.insert(a, new_id);
+				}
+				// Put back the updated group under its (possibly new) id
+				self.all.insert(new_id, group);
+				Some((removed, RemoveResult::Updated(new_id)))
 			}
 			Some((
 				removed,
-				RemoveOutcome::Split {
+				GroupEffect::Split {
 					old_id, children, ..
 				},
 			)) => {
@@ -210,6 +212,74 @@ impl<P: Platform> Groups<P> {
 			}
 			None => None,
 		}
+	}
+
+	/// Consume an order by its hash: advances nonce frontiers, prunes mutually
+	/// exclusive orders, and applies structural changes to groups and indexes.
+	///
+	/// Returns `Some(ConsumeResult)` when the order existed, or `None` otherwise.
+	pub fn consume(&mut self, hash: OrderHash) -> Option<ConsumeResult<P>> {
+		let current_id = *self.by_order.get(&hash)?;
+		let mut group = self.all.remove(&current_id)?;
+
+		let outcome = group.consume(&hash)?;
+
+		// Always remove consumed and pruned orders from by_order before reindexing
+		self.by_order.remove(&hash);
+		for po in &outcome.pruned {
+			self.by_order.remove(&po.hash());
+		}
+
+		let remove_result = match outcome.group {
+			GroupEffect::Vanished { .. } => {
+				// Purge all indices for the vanished group
+				self.unindex_group_id(&current_id);
+				RemoveResult::Vanished
+			}
+			GroupEffect::StillConnected {
+				old_id,
+				new_id,
+				removed_signers,
+			} => {
+				// Remove signers that dropped out entirely
+				for a in removed_signers {
+					self.by_signer.remove(&a);
+				}
+				// Replace by_order entries for the group's remaining orders
+				self.reindex_group_orders_replace(old_id, new_id, &group);
+				// Ensure by_signer entries for current signers point to new_id
+				for a in group.signers() {
+					self.by_signer.insert(a, new_id);
+				}
+				// Put back the updated group
+				self.all.insert(new_id, group);
+				RemoveResult::Updated(new_id)
+			}
+			GroupEffect::Split {
+				old_id, children, ..
+			} => {
+				// Purge indices for the old group and insert children
+				self.unindex_group_id(&old_id);
+				let mut new_ids = Vec::with_capacity(children.len());
+				for child in children {
+					let gid = child.id();
+					self.index_group_full(gid, &child);
+					self.all.insert(gid, child);
+					new_ids.push(gid);
+				}
+				return Some(ConsumeResult {
+					consumed: outcome.consumed,
+					pruned: outcome.pruned,
+					outcome: RemoveResult::Split(new_ids),
+				});
+			}
+		};
+
+		Some(ConsumeResult {
+			consumed: outcome.consumed,
+			pruned: outcome.pruned,
+			outcome: remove_result,
+		})
 	}
 }
 
@@ -308,9 +378,34 @@ impl<P: Platform> Groups<P> {
 		// Put back the group under its new id
 		self.all.insert(new_id, group);
 	}
+
+	/// Replace the by_order mappings for a group's orders after a mutation,
+	/// ensuring stale entries tied to `old_id` are purged and current orders
+	/// point to `new_id`.
+	fn reindex_group_orders_replace(
+		&mut self,
+		old_id: GroupId,
+		new_id: GroupId,
+		group: &Group<P>,
+	) {
+		// Purge all by_order entries that were associated with old_id
+		let to_purge_orders: Vec<OrderHash> = self
+			.by_order
+			.iter()
+			.filter_map(|(h, g)| if *g == old_id { Some(*h) } else { None })
+			.collect();
+		for h in to_purge_orders {
+			self.by_order.remove(&h);
+		}
+		// Reinsert current group's orders pointing to new_id
+		for h in group.order_hashes() {
+			self.by_order.insert(h, new_id);
+		}
+	}
 }
 
 /// Result of removing an order from the `Groups` collection.
+#[derive(Debug, Clone)]
 pub enum RemoveResult {
 	/// Updated a single group (may have a new `GroupId`).
 	Updated(GroupId),
@@ -318,6 +413,17 @@ pub enum RemoveResult {
 	Vanished,
 	/// The group split into multiple child groups. Contains their ids.
 	Split(Vec<GroupId>),
+}
+
+/// Result of consuming an order at the collection level.
+#[derive(Debug, Clone)]
+pub struct ConsumeResult<P: Platform> {
+	/// The order that was consumed (treated as included on-chain).
+	pub consumed: PooledOrder<P>,
+	/// Conflicting orders that were pruned as a consequence of consumption.
+	pub pruned: Vec<PooledOrder<P>>,
+	/// Structural change to the owning group(s) after applying the consume.
+	pub outcome: RemoveResult,
 }
 
 #[cfg(test)]
@@ -680,5 +786,41 @@ mod tests {
 		};
 		assert!(grp.contains_order(&o01.hash()));
 		assert!(grp.contains_order(&o0_new.hash()));
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn consume_absent_returns_none<P: TestablePlatform>() {
+		let mut groups: Groups<P> = Groups::default();
+		assert!(groups.consume(OrderHash::from([0u8; 32])).is_none());
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	fn consume_prunes_conflicts_and_updates_indexes<P: TestablePlatform>() {
+		// Two single-signer txs with the same signer and overlapping nonce ->
+		// conflicts
+		let signers = (0..1)
+			.map(FundedAccounts::signer)
+			.sorted_by(|a, b| a.address().cmp(&b.address()))
+			.collect::<Vec<_>>();
+		let mut groups: Groups<P> = Groups::default();
+		let o0a: PooledOrder<P> =
+			Order::Transaction(make_tx::<P>(&signers[0], 0)).into();
+		let o0b: PooledOrder<P> =
+			Order::Transaction(make_tx::<P>(&signers[0], 0)).into();
+		let _gid = groups.insert(o0a.clone());
+		let _gid2 = groups.insert(o0b.clone());
+
+		let res = groups.consume(o0a.hash()).expect("present");
+		assert_eq!(res.consumed.hash(), o0a.hash());
+		// The other order should be pruned
+		assert_eq!(res.pruned.len(), 1);
+		assert_eq!(res.pruned[0].hash(), o0b.hash());
+		match res.outcome {
+			RemoveResult::Vanished => {}
+			_ => panic!("expected Vanished after pruning last order"),
+		}
+		// Indices should be empty
+		assert!(groups.is_empty());
+		assert_eq!(groups.len(), 0);
 	}
 }
