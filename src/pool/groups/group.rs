@@ -8,7 +8,7 @@ use {
 	alloy::primitives::Address,
 	parking_lot::RwLock,
 	rustc_hash::{FxHashMap, FxHashSet},
-	std::sync::Arc,
+	std::{collections::VecDeque, sync::Arc},
 };
 
 /// A Group is a maximal connected component in the undirected graph of orders,
@@ -40,6 +40,18 @@ impl<P: Platform> Group<P> {
 		match &self.0 {
 			GroupInner::Active(inner) => inner.read().id,
 			GroupInner::Tombstone(id) => *id,
+		}
+	}
+
+	/// Returns a clone of the order with the given hash if it exists in this
+	/// group.
+	///
+	/// Note `PooledOrder` is cheap to clone, here we're returning an owned
+	/// instance to avoid lifetime assumptions.
+	pub fn get(&self, order: &OrderHash) -> Option<PooledOrder<P>> {
+		match &self.0 {
+			GroupInner::Active(inner) => inner.read().orders.get(order).cloned(),
+			GroupInner::Tombstone(_) => None,
 		}
 	}
 
@@ -325,7 +337,7 @@ impl<P: Platform> Group<P> {
 
 		// Move orders out of other and into self, updating connectivity and anchor
 		let moved = core::mem::take(&mut other_inner.orders);
-		for (_h, o) in moved.into_iter() {
+		for (_h, o) in moved {
 			let signers = o.signers();
 			for &a in signers {
 				if a < new_anchor {
@@ -541,8 +553,7 @@ impl Connectivity {
 		while let Some(&seed) = unassigned.iter().next() {
 			let cid = comp_anchors.len();
 			let mut anchor = seed;
-			let mut q: std::collections::VecDeque<Address> =
-				std::collections::VecDeque::new();
+			let mut q: VecDeque<Address> = VecDeque::new();
 			q.push_back(seed);
 			comp_id.insert(seed, cid);
 			unassigned.remove(&seed);

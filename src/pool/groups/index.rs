@@ -1,11 +1,3 @@
-#![allow(
-	dead_code,
-	clippy::doc_lazy_continuation,
-	clippy::needless_pass_by_value,
-	clippy::explicit_iter_loop,
-	clippy::manual_let_else,
-	clippy::if_not_else
-)]
 use {
 	super::{
 		super::{OrderHash, PooledOrder},
@@ -75,44 +67,36 @@ impl<P: Platform> Groups<P> {
 	///
 	/// Returns the `GroupId` that now owns the order.
 	pub fn insert(&mut self, order: PooledOrder<P>) -> GroupId {
+		let order_hash = order.hash();
+
 		// Fast path: already present
-		if let Some(gid) = self.by_order.get(&order.hash()) {
+		if let Some(gid) = self.by_order.get(&order_hash) {
 			return *gid;
 		}
-		let signers = order.signers();
-		// Candidate groups by overlapping signers, keep unique ids in insertion
-		// order
-		let mut candidate_ids: Vec<GroupId> = Vec::new();
-		for &a in signers {
-			if let Some(gid) = self.by_signer.get(&a) {
-				if !candidate_ids.contains(gid) {
-					candidate_ids.push(*gid);
-				}
-			}
-		}
 
-		match candidate_ids.len() {
+		let signers = order.signers().clone();
+		let matching_groups = self.overlapping_signers(signers.iter());
+
+		match matching_groups.len() {
 			0 => {
 				// No overlap → new group
-				let group = Group::new(order.clone());
+				let group = Group::new(order);
 				let gid = group.id();
 				self.index_new_group(gid, &group);
-				self.by_order.insert(order.hash(), gid);
+				self.by_order.insert(order_hash, gid);
 				self.all.insert(gid, group);
 				gid
 			}
 			1 => {
 				// Extend existing group
-				let current_id = candidate_ids[0];
+				let current_id = matching_groups[0];
 				let group = self.all.get_mut(&current_id).expect("group must exist");
-				let new_id = match group.insert(order.clone()) {
-					Ok(id) => id,
-					Err(_) => {
-						// already present or disjoint (shouldn't be disjoint due to
-						// mapping)
-						return current_id;
-					}
+				let Ok(new_id) = group.insert(order) else {
+					// already present or disjoint (shouldn't be disjoint due to
+					// mapping)
+					return current_id;
 				};
+
 				if new_id != current_id {
 					// Anchor changed → reindex
 					let group = self.all.remove(&current_id).expect("present");
@@ -120,15 +104,15 @@ impl<P: Platform> Groups<P> {
 				}
 				// Ensure any new signers introduced by the order are mapped
 				for a in signers {
-					self.by_signer.insert(*a, new_id);
+					self.by_signer.insert(a, new_id);
 				}
-				self.by_order.insert(order.hash(), new_id);
+				self.by_order.insert(order_hash, new_id);
 				new_id
 			}
 			_ => {
 				// Bridge multiple groups: merge into the largest group to minimize
 				// moves
-				let mut ids = candidate_ids;
+				let mut ids = matching_groups;
 				ids.sort_by_key(|gid| self.all.get(gid).map_or(0, |g| g.len()));
 				let primary_id = ids.pop().expect("non-empty");
 				let mut primary = self.all.remove(&primary_id).expect("present");
@@ -143,14 +127,14 @@ impl<P: Platform> Groups<P> {
 
 				// Insert the new order into the merged primary
 				let prev_id = primary.id();
-				let res_id = match primary.insert(order.clone()) {
+				let res_id = match primary.insert(order) {
 					Ok(id) => id,
 					Err(_) => prev_id,
 				};
 				let new_id = res_id;
 				// Reindex signers and orders for the merged group under new_id
 				self.index_group_full(new_id, &primary);
-				self.by_order.insert(order.hash(), new_id);
+				self.by_order.insert(order_hash, new_id);
 				self.all.insert(new_id, primary);
 				new_id
 			}
@@ -189,14 +173,7 @@ impl<P: Platform> Groups<P> {
 			)) => {
 				// Update indices if id changed
 				self.by_order.remove(&hash);
-				if new_id != old_id {
-					// purge signers no longer present
-					for a in removed_signers {
-						self.by_signer.remove(&a);
-					}
-					self.reindex_group_replace(old_id, new_id, group);
-					Some((removed, RemoveResult::Updated(new_id)))
-				} else {
+				if new_id == old_id {
 					// put back and ensure indices still present
 					for a in removed_signers {
 						self.by_signer.remove(&a);
@@ -204,6 +181,13 @@ impl<P: Platform> Groups<P> {
 					self.index_group_partial(old_id, &group);
 					self.all.insert(old_id, group);
 					Some((removed, RemoveResult::Updated(old_id)))
+				} else {
+					// purge signers no longer present
+					for a in removed_signers {
+						self.by_signer.remove(&a);
+					}
+					self.reindex_group_replace(old_id, new_id, group);
+					Some((removed, RemoveResult::Updated(new_id)))
 				}
 			}
 			Some((
@@ -228,7 +212,26 @@ impl<P: Platform> Groups<P> {
 		}
 	}
 }
+
+/// Internal implementation details
 impl<P: Platform> Groups<P> {
+	fn overlapping_signers<'a>(
+		&mut self,
+		signers: impl Iterator<Item = &'a Address>,
+	) -> Vec<GroupId> {
+		let mut candidate_ids: Vec<GroupId> = Vec::new();
+
+		for a in signers {
+			if let Some(gid) = self.by_signer.get(a) {
+				if !candidate_ids.contains(gid) {
+					candidate_ids.push(*gid);
+				}
+			}
+		}
+
+		candidate_ids
+	}
+
 	fn index_new_group(&mut self, gid: GroupId, group: &Group<P>) {
 		for a in group.signers() {
 			self.by_signer.insert(a, gid);
@@ -309,8 +312,6 @@ impl<P: Platform> Groups<P> {
 
 /// Result of removing an order from the `Groups` collection.
 pub enum RemoveResult {
-	/// Nothing to do: order hash was not known.
-	NoopAbsent,
 	/// Updated a single group (may have a new `GroupId`).
 	Updated(GroupId),
 	/// The group vanished entirely.
@@ -483,10 +484,10 @@ mod tests {
 		let _ = groups.insert(o23.clone());
 		// removing the bridge splits into two child groups
 		let (removed, res) = groups.discard(o12.hash()).expect("present");
-		let ids = match res {
-			RemoveResult::Split(ids) => ids,
-			_ => panic!("expected Split"),
+		let RemoveResult::Split(ids) = res else {
+			panic!("expected Split");
 		};
+
 		assert!(ids.len() >= 2);
 		// Original group id should no longer exist
 		assert!(groups.get(&gid0).is_none());
@@ -601,10 +602,10 @@ mod tests {
 		let _ = groups.insert(o_mid_max.clone());
 
 		let (_removed, res) = groups.discard(o_anchor_mid.hash()).expect("present");
-		let new_id = match res {
-			RemoveResult::Updated(id) => id,
-			_ => panic!("expected Updated with anchor change"),
+		let RemoveResult::Updated(new_id) = res else {
+			panic!("expected Updated with anchor change");
 		};
+
 		// Old id should be gone after reindex, remaining order still present
 		assert!(groups.get(&old_id).is_none());
 		let g = groups.get(&new_id).expect("reindexed group present");
@@ -649,9 +650,8 @@ mod tests {
 
 		let (removed, res) = groups.discard(o12.hash()).expect("present");
 		assert_eq!(removed.hash(), o12.hash());
-		let child_ids = match res {
-			RemoveResult::Split(ids) => ids,
-			_ => panic!("expected split"),
+		let RemoveResult::Split(child_ids) = &res else {
+			panic!("expected Split");
 		};
 		assert!(!child_ids.is_empty());
 
