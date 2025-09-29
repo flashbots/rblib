@@ -157,23 +157,25 @@ impl Eligibility {
 			None
 		}
 	}
+}
 
-	/// This is a quality of life helper that allows users of this api to say:
-	/// `if bundle.is_eligible(block).as_bool() { .. }`, without going into the
-	/// details of the eligibility.
-	pub fn as_bool(self) -> bool {
-		matches!(self, Eligibility::Eligible)
+/// This is a quality of life helper that allows users of this api to say:
+/// `if bundle.is_eligible(block).into() {.}`, without going into the
+/// details of the eligibility.
+impl From<Eligibility> for bool {
+	fn from(el: Eligibility) -> Self {
+		matches!(el, Eligibility::Eligible)
 	}
 }
 
 /// This is a quality of life helper that allows users of this api to say:
-/// `if !bundle.is_eligible(block) { .. }`, without going into the details of
+/// `if !bundle.is_eligible(block) {.}`, without going into the details of
 /// the ineligibility.
 impl Not for Eligibility {
 	type Output = bool;
 
 	fn not(self) -> Self::Output {
-		!self.as_bool()
+		!<Eligibility as Into<bool>>::into(self)
 	}
 }
 
