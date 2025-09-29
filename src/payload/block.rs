@@ -27,12 +27,12 @@ pub enum Error<P: Platform> {
 /// payload state transition checkpoints.
 ///
 /// Usually instances of this type are created once as a response to CL client
-/// `ForkchoiceUpdated` requests with `PayloadAttributes` that signals the need
-/// to start constructing a new payload on top of a given block, then different
-/// versions of payload checkpoints are created on top of this instance using
-/// the [`BlockContext::start`] method.
+/// `ForkchoiceUpdated` requests with `PayloadAttributes`.
+/// This signals the need to start constructing a new payload on top of a given
+/// block. Then different versions of payload checkpoints are created on top of
+/// this instance using the [`BlockContext::start`] method.
 ///
-/// This type is cheap to clone.
+/// This type is inexpensive to clone.
 pub struct BlockContext<P: Platform> {
 	inner: Arc<BlockContextInner<P>>,
 }
@@ -47,27 +47,30 @@ impl<P: Platform> Clone for BlockContext<P> {
 
 /// Constructors
 impl<P: Platform> BlockContext<P> {
-	/// To create a new block context we need:
+	/// To create a new [`BlockContext`], we need:
 	///  - The parent block header on top of which we are building this block.
 	///  - The payload builder attributes for the next block. This usually comes
-	///    from [`reth_payload_builder::JobGenerator::new_payload_job`] as a
-	///    response to Engine API forkchoiceUpdated requests.
+	///    from [`PayloadJobGenerator::new_payload_job`] as a response to Engine
+	///    API `ForkchoiceUpdated` requests.
 	///  - The state of the chain at the parent block. This can be acquired from
-	///    `StateProviderFactory::state_by_block_hash(parent)`.
+	///    [`StateProviderFactory::state_by_block_hash`]
 	///  - The chainspec of the chain we're building for.
+	///
+	/// [`PayloadJobGenerator::new_payload_job`]: reth_payload_builder::PayloadJobGenerator::new_payload_job
+	/// [`StateProviderFactory::state_by_block_hash`]: reth::providers::StateProviderFactory::state_by_block_hash
 	pub fn new(
 		parent: SealedHeader<types::Header<P>>,
 		attribs: types::PayloadBuilderAttributes<P>,
 		base_state: StateProviderBox,
 		chainspec: Arc<types::ChainSpec<P>>,
 	) -> Result<Self, Error<P>> {
-		let evm_config = P::evm_config::<P>(Arc::clone(&chainspec));
 		let block_env = P::next_block_environment_context::<P>(
 			&chainspec,
 			parent.header(),
-			&attribs, //
+			&attribs,
 		);
 
+		let evm_config = P::evm_config::<P>(Arc::clone(&chainspec));
 		let evm_env = evm_config
 			.next_evm_env(&parent, &block_env)
 			.map_err(Error::EvmEnv)?;
@@ -105,8 +108,8 @@ impl<P: Platform> BlockContext<P> {
 		&self.inner.parent
 	}
 
-	/// Returns the payload attributes that were supplied by the CL client
-	/// during the `ForkchoiceUpdated` request.
+	/// Returns the payload attributes supplied by the CL client during the
+	/// `ForkchoiceUpdated` request.
 	pub fn attributes(&self) -> &types::PayloadBuilderAttributes<P> {
 		&self.inner.attribs
 	}
@@ -118,13 +121,13 @@ impl<P: Platform> BlockContext<P> {
 		self.inner.base_state.database.as_ref()
 	}
 
-	/// Returns the EVM configuration that is used to create EVM instances
-	/// for executing transactions in the payload under construction.
+	/// Returns the EVM configuration used to create EVM instances for executing
+	/// transactions in the payload under construction.
 	pub fn evm_config(&self) -> &P::EvmConfig {
 		&self.inner.evm_config
 	}
 
-	/// Returns a evm environment preconfigured for executing transactions in
+	/// Returns an evm environment preconfigured for executing transactions in
 	/// the payload under construction.
 	pub fn evm_env(&self) -> &types::EvmEnv<P> {
 		&self.inner.evm_env
@@ -137,7 +140,7 @@ impl<P: Platform> BlockContext<P> {
 		&self.inner.block_env
 	}
 
-	/// Returns the chainspec that defines the chain and fork specific parameters
+	/// Returns the chainspec that defines the chain- and fork-specific parameters
 	/// that are used to configure the EVM environment and the next block
 	/// environment for the block that is being built.
 	pub fn chainspec(&self) -> &Arc<types::ChainSpec<P>> {
@@ -168,9 +171,9 @@ struct BlockContextInner<P: Platform> {
 	/// during the `ForkchoiceUpdated` request.
 	attribs: types::PayloadBuilderAttributes<P>,
 
-	/// Context object for constucting evm instance for the block that is being
-	/// built. We use this context to apply any chain and fork specific state
-	/// updates that are defined in the chainspec.
+	/// Context object for constructing evm instance for the block being built.
+	/// We use this context to apply any chain- and fork-specific state updates
+	/// that are defined in the chainspec.
 	evm_env: types::EvmEnv<P>,
 
 	/// Context required for configuring this block environment.
