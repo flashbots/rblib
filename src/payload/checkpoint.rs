@@ -17,7 +17,7 @@ use {
 			state::{AccountInfo, Bytecode},
 		},
 	},
-	std::{sync::Arc, time::Instant},
+	std::{iter::Successors, sync::Arc, time::Instant},
 	thiserror::Error,
 };
 
@@ -35,11 +35,11 @@ pub enum Error<P: Platform> {
 ///
 /// Notes:
 ///  - There is no public API to create a checkpoint directly. Checkpoints are
-///    created by the [`BlockContext`] when it starts a new payload building
-///    process or by mutatations applied to an already existing checkpoint.
+///    created from the [`BlockContext`] when it starts a new payload building
+///    process or by mutations applied to an already existing checkpoint.
 ///
 ///  - Checkpoints contain all the information needed to assemble a full block
-///    payload, they however cannot be used directly to assemble a block. The
+///    payload. However, they cannot be used directly to assemble a block. The
 ///    block assembly process is very node-specific and is part of the pipelines
 ///    api, which has more info and access to the underlying node facilities.
 ///
@@ -48,13 +48,13 @@ pub enum Error<P: Platform> {
 ///    existing ones, forming a chain of checkpoints.
 ///
 ///  - Checkpoints may represent forks in the payload building process. Two
-///    checkpoints can share a common ancestor, without having linear history
+///    checkpoints can share a common ancestor without having a linear history
 ///    between them. Each of the diverging checkpoints can be used to build
 ///    alternative versions of the payload.
 ///
-///  - Checkpoints are cheap to clone, discard and move around. They are
-///    expensive to create, as they require executing a transaction by the EVM
-///    and storing the resulting state changes.
+///  - Checkpoints are inexpensive to clone, discard and move around. However,
+///    they are expensive to create, as they require executing transactions
+///    through the EVM and storing the resulting state changes.
 ///
 ///  - Checkpoints are thread-safe, Send + Sync + 'static.
 ///
@@ -75,11 +75,11 @@ pub struct Checkpoint<P: Platform> {
 
 /// Public read API
 impl<P: Platform> Checkpoint<P> {
-	/// Returns the number of checkpoints preceeding this checkpoint since the
-	/// beginning of the block payload we're building.
+	/// Returns the number of checkpoints preceding this checkpoint from the
+	/// beginning of the block payload.
 	///
 	/// Depth zero is when [`BlockContext::start`] is called, and the first
-	/// checkpoint is created and has no previous checkpoints.
+	/// checkpoint is created with no previous checkpoints.
 	pub fn depth(&self) -> usize {
 		self.inner.depth
 	}
@@ -89,7 +89,7 @@ impl<P: Platform> Checkpoint<P> {
 		self.inner.created_at
 	}
 
-	/// The returns the payload version before the current checkpoint.
+	/// Returns the previous checkpoint before the current checkpoint.
 	///
 	/// Using the previous checkpoint is equivalent to discarding the
 	/// state mutations made in the current checkpoint.
@@ -102,16 +102,19 @@ impl<P: Platform> Checkpoint<P> {
 		})
 	}
 
-	/// Returns the block context that is the root of theis checkpoint.
+	/// Returns the block context at the root of the checkpoint.
 	pub fn block(&self) -> &BlockContext<P> {
 		&self.inner.block
 	}
 
-	/// The transactions that created this checkpoint. This could be either an
-	/// empty iterator if this checkpoint is a barrier or other non-transaction
-	/// checkpoint, it can be one transaction if this checkpoint was created by
-	/// applying a single transaction, or it can be multiple if this checkpoint
-	/// represents a bundle.
+	/// The transactions that created this checkpoint.
+	/// The returned slice is a view into all applied transactions in this
+	/// checkpoint:
+	/// - Empty if this checkpoint is a barrier or other non-transaction
+	///   checkpoint.
+	/// - Single transaction if this checkpoint was created by applying a single
+	///   transaction.
+	/// - Multiple transactions if this checkpoint represents a bundle.
 	pub fn transactions(&self) -> &[Recovered<types::Transaction<P>>] {
 		match &self.inner.mutation {
 			Mutation::Barrier | Mutation::NamedBarrier(_) => &[],
@@ -128,7 +131,7 @@ impl<P: Platform> Checkpoint<P> {
 		}
 	}
 
-	/// The state changes that occured as a result of executing the
+	/// The state changes that occurred as a result of executing the
 	/// transaction(s) that created this checkpoint.
 	pub fn state(&self) -> Option<&BundleState> {
 		match self.inner.mutation {
@@ -147,27 +150,25 @@ impl<P: Platform> Checkpoint<P> {
 		matches!(self.inner.mutation, Mutation::NamedBarrier(ref barrier_name) if barrier_name == name)
 	}
 
-	/// If this checkpoint is a single transaction, returns a reference to the
-	/// transaction that created this checkpoint. otherwise returns `None`.
+	/// If this checkpoint is created from a single transaction, returns a
+	/// reference to this transaction. Otherwise, returns `None`.
 	pub fn as_transaction(&self) -> Option<&Recovered<types::Transaction<P>>> {
 		if let Mutation::Executable(result) = &self.inner.mutation {
 			if let Executable::Transaction(tx) = result.source() {
 				return Some(tx);
 			}
 		}
-
 		None
 	}
 
-	/// If this checkpoint is a bundle, returns a reference to the bundle that
-	/// created this checkpoint. otherwise returns `None`.
+	/// If this checkpoint is created from a bundle, returns a reference to this
+	/// bundle. Otherwise, returns `None`.
 	pub fn as_bundle(&self) -> Option<&types::Bundle<P>> {
 		if let Mutation::Executable(result) = &self.inner.mutation {
 			if let Executable::Bundle(bundle) = result.source() {
 				return Some(bundle);
 			}
 		}
-
 		None
 	}
 }
@@ -182,19 +183,12 @@ impl<P: Platform> Checkpoint<P> {
 		&self,
 		executable: impl IntoExecutable<P, S>,
 	) -> Result<Self, ExecutionError<P>> {
-		Ok(Self {
-			inner: Arc::new(CheckpointInner {
-				block: self.inner.block.clone(),
-				prev: Some(Arc::clone(&self.inner)),
-				depth: self.inner.depth + 1,
-				mutation: Mutation::Executable(
-					executable
-						.try_into_executable()?
-						.execute(self.block(), self)?,
-				),
-				created_at: Instant::now(),
-			}),
-		})
+		let mutation = Mutation::Executable(
+			executable
+				.try_into_executable()?
+				.execute(self.block(), self)?,
+		);
+		Ok(self.apply_with(mutation))
 	}
 
 	/// Creates a new checkpoint on top of the current checkpoint that introduces
@@ -202,12 +196,22 @@ impl<P: Platform> Checkpoint<P> {
 	/// mutable history.
 	#[must_use]
 	pub fn barrier(&self) -> Self {
+		Self::apply_with(self, Mutation::Barrier)
+	}
+}
+
+/// Internal API
+impl<P: Platform> Checkpoint<P> {
+	// Create a new checkpoint on top of the current one with the given mutation.
+	// See public builder API.
+	#[must_use]
+	fn apply_with(&self, mutation: Mutation<P>) -> Self {
 		Self {
 			inner: Arc::new(CheckpointInner {
 				block: self.inner.block.clone(),
 				prev: Some(Arc::clone(&self.inner)),
 				depth: self.inner.depth + 1,
-				mutation: Mutation::Barrier,
+				mutation,
 				created_at: Instant::now(),
 			}),
 		}
@@ -228,13 +232,11 @@ impl<P: Platform> Checkpoint<P> {
 			}),
 		}
 	}
-}
 
-/// Internal API
-impl<P: Platform> Checkpoint<P> {
 	/// Start a new checkpoint for an empty payload rooted at the
 	/// state of the parent block of the block for which the payload is
 	/// being built.
+	#[must_use]
 	pub(super) fn new_at_block(block: BlockContext<P>) -> Self {
 		Self {
 			inner: Arc::new(CheckpointInner {
@@ -246,14 +248,35 @@ impl<P: Platform> Checkpoint<P> {
 			}),
 		}
 	}
+
+	/// Lazy iterator over historic checkpoints.
+	/// Note that it is in reverse history order, starting from the latest applied
+	/// checkpoint up to the first one.
+	fn iter(&self) -> Successors<Self, fn(&Self) -> Option<Self>> {
+		<&Self as IntoIterator>::into_iter(self)
+	}
 }
 
-/// Describes the type of state mutation that was applied to the
-/// previous checkpoint to create this checkpoint.
+impl<P: Platform> IntoIterator for &Checkpoint<P> {
+	type IntoIter =
+		Successors<Checkpoint<P>, fn(&Checkpoint<P>) -> Option<Checkpoint<P>>>;
+	type Item = Checkpoint<P>;
+
+	fn into_iter(self) -> Self::IntoIter {
+		std::iter::successors(Some(self.clone()), |cp| {
+			cp.inner.prev.as_ref().map(|prev| Checkpoint {
+				inner: Arc::clone(prev),
+			})
+		})
+	}
+}
+
+/// Describes the type of state mutation that was applied to the previous
+/// checkpoint to create this checkpoint.
 enum Mutation<P: Platform> {
 	/// A checkpoint that indicates that any prior checkpoints are immutable and
 	/// should not be discarded or reordered. An example of this would be placing
-	/// a barrier after applying sequencer transactions, to ensure that they do
+	/// a barrier after applying sequencer transactions to ensure that they do
 	/// not get reordered by pipelines. Another example would be placing a barrier
 	/// after every commited flashblock, to ensure that any steps in the pipeline
 	/// do not modify the commited state of the payload in process.
@@ -284,13 +307,14 @@ struct CheckpointInner<P: Platform> {
 	/// The previous checkpoint in this chain of checkpoints, if any.
 	prev: Option<Arc<Self>>,
 
-	/// The number of checkpoints in the chain starting from the begining of the
+	/// The number of checkpoints in the chain starting from the beginning of the
 	/// block context.
 	///
-	/// Depth zero is when [`BlockContext::start`] is called, and the first
+	/// Depth zero is when [`BlockContext::start`] is called, as the first
+	/// checkpoint
 	depth: usize,
 
-	/// The mutation
+	/// The mutation kind for the checkpoint.
 	mutation: Mutation<P>,
 
 	/// The timestamp when this checkpoint was created.
@@ -311,7 +335,7 @@ impl<P: Platform> From<Checkpoint<P>> for Vec<types::Transaction<P>> {
 
 /// Any checkpoint can be used as a database reference for an EVM instance.
 /// The state at a checkpoint is the cumulative aggregate of all state mutations
-/// that occured in the current checkpoint and all its ancestors on top of the
+/// that occurred in the current checkpoint and all its ancestors on top of the
 /// base state of the parent block of the block for which the payload is being
 /// built.
 impl<P: Platform> DatabaseRef for Checkpoint<P> {
@@ -327,19 +351,15 @@ impl<P: Platform> DatabaseRef for Checkpoint<P> {
 		// starting from the most recent one, to find the first checkpoint
 		// that has touched the given address.
 
-		let mut current = Some(&self.inner);
-		while let Some(checkpoint) = current {
-			if let Mutation::Executable(result) = &checkpoint.mutation {
-				if let Some(account) = result
-					.state()
-					.account(&address)
-					.and_then(|account| account.info.as_ref())
-				{
-					return Ok(Some(account.clone()));
-				}
-			}
-
-			current = checkpoint.prev.as_ref();
+		if let Some(account) = self.iter().find_map(|checkpoint| {
+			checkpoint
+				.result()?
+				.state()
+				.account(&address)
+				.and_then(|account| account.info.as_ref())
+				.cloned()
+		}) {
+			return Ok(Some(account));
 		}
 
 		// none of the checkpoints priori to this have touched this address,
@@ -359,17 +379,14 @@ impl<P: Platform> DatabaseRef for Checkpoint<P> {
 		// starting from the most recent one, to find the first checkpoint
 		// that has created the code with the given hash.
 
-		let mut current = Some(&self.inner);
-		while let Some(checkpoint) = current {
-			if let Mutation::Executable(result) = &checkpoint.mutation {
-				if let Some(code) = result.state().bytecode(&code_hash) {
-					return Ok(code);
-				}
-			}
-
-			current = checkpoint.prev.as_ref();
+		if let Some(code) = self
+			.iter()
+			.find_map(|checkpoint| checkpoint.result()?.state().bytecode(&code_hash))
+		{
+			return Ok(code);
 		}
 
+		// check if the code exists in the base state of the block context.
 		Ok(
 			self
 				.block()
@@ -389,19 +406,15 @@ impl<P: Platform> DatabaseRef for Checkpoint<P> {
 		// traverse checkpoints history looking for the first checkpoint that
 		// has touched the given address.
 
-		let mut current = Some(&self.inner);
-		while let Some(checkpoint) = current {
-			if let Mutation::Executable(result) = &checkpoint.mutation {
-				if let Some(slot) = result
-					.state()
-					.account(&address)
-					.and_then(|account| account.storage.get(&index))
-				{
-					return Ok(slot.present_value);
-				}
-			}
-
-			current = checkpoint.prev.as_ref();
+		if let Some(value) = self.iter().find_map(|checkpoint| {
+			checkpoint
+				.result()?
+				.state()
+				.account(&address)
+				.and_then(|account| account.storage.get(&index))
+				.map(|slot| slot.present_value)
+		}) {
+			return Ok(value);
 		}
 
 		// none of the checkpoints prior to this have touched this address,
