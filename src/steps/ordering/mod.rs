@@ -11,10 +11,15 @@ use {
 	},
 };
 
+mod destination;
 mod profit;
 mod tip;
 
-pub use {profit::OrderByCoinbaseProfit, tip::OrderByPriorityFee};
+pub use {
+	destination::OrderByDestination,
+	profit::OrderByCoinbaseProfit,
+	tip::OrderByPriorityFee,
+};
 
 /// A trait that implements logic for assigning a score to an order.
 /// Different implementations of this trait provide different ordering
