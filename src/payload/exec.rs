@@ -168,12 +168,12 @@ impl<P: Platform> Executable<P> {
 	///       bundle. The bundle stays valid.
 	///
 	/// See truth table:
-	/// | success | allowed_to_fail | optional | Action  |
-	/// | ------: | :-------------: | :------: | :------ |
-	/// |    true |   *don’t care*  |   *any*  | include |
-	/// |   false |       true      |   *any*  | include |
-	/// |   false |      false      |   true   | discard |
-	/// |   false |      false      |   false  | error   |
+	/// | success | `allowed_to_fail` | optional | Action  |
+	/// | ------: | :---------------: | :------: | :------ |
+	/// |    true |    *don’t care*   |   *any*  | include |
+	/// |   false |        true       |   *any*  | include |
+	/// |   false |       false       |   true   | discard |
+	/// |   false |       false       |   false  | error   |
 	///
 	/// - At the end of the bundle execution, the bundle implementation will have
 	///   a chance to validate any other platform-specific post-execution
@@ -221,18 +221,15 @@ impl<P: Platform> Executable<P> {
 					results.push(result);
 					db.commit(state);
 				}
-				// Optional failing transaction, not allowed to fail: discard it
-				Ok(_) if optional => {
+				// Optional failing transaction, not allowed to fail
+				// or optional invalid transaction: discard it
+				Ok(_) | Err(_) if optional => {
 					discarded.push(tx_hash);
 				}
 				// Non-Optional failing transaction, not allowed to fail: invalidate the
 				// bundle
 				Ok(_) => {
 					return Err(ExecutionError::BundleTransactionReverted(tx_hash));
-				}
-				// Optional invalid transaction: discard it
-				Err(_) if optional => {
-					discarded.push(tx_hash);
 				}
 				// Non-Optional invalid transaction: invalidate the bundle
 				Err(err) => {
