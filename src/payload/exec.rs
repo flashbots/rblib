@@ -94,7 +94,7 @@ impl<P: Platform> Executable<P> {
 	///
 	/// - Transactions that fail gracefully (revert or halt) will produce an
 	///   execution result and state changes. It is up to higher levels of the
-	///   system to decide what to do with such transactions, e.g. whether to
+	///   system to decide what to do with such transactions, e.g., whether to
 	///   remove them from the payload or not (see [`RevertProtection`]).
 	fn execute_transaction<DB>(
 		tx: Recovered<types::Transaction<P>>,
@@ -123,54 +123,63 @@ impl<P: Platform> Executable<P> {
 		})
 	}
 
-	/// Executes a bundle of transactions and returns the outcome of the execution
-	/// of all transactions in the bundle along with the aggregate of all state
-	/// changes.
+	/// Executes a bundle of transactions and returns the execution outcome of all
+	/// transactions in the bundle along with the aggregate of all state changes.
 	///
 	/// Notes:
 	/// - Bundles that are not eligible for execution in the current block are
-	///   considered invalid and no execution result will be produced.
+	///   considered invalid, and no execution result will be produced.
 	///
 	/// - All transactions in the bundle are executed in the order in which they
 	///   were defined in the bundle.
 	///
-	/// - Each transaction is executed on the state that was produced by the
-	///   previous transaction in the bundle.
+	/// - Each transaction is executed on the state produced by the previous
+	///   transaction in the bundle.
 	///
 	/// - First transaction in the bundle is executed on the state of the
 	///   checkpoint that we are building on.
 	///
-	/// - Transactions that cause EVM errors will invalidate the whole bundle and
-	///   no execution result will be produced (similar behavior to invalid loose
-	///   txs),
-	///     - Unless the transaction that is failing is optional
-	///       [`Bundle::is_optional`]. In that case a new version of the bundle
-	///       will be created by removing the invalid failing transaction through
-	///       [`Bundle::without_transaction`].
+	/// - Transactions that cause EVM errors will invalidate the bundle, and no
+	///   execution result will be produced (similar behavior to invalid loose
+	///   txs). Bundle transaction can be marked optional [`Bundle::is_optional`],
+	///   and invalid outcomes are handled differently:
+	///     - If the invalid transaction is optional, a new version of the bundle
+	///       will be created without the invalid transaction by removing it
+	///       through [`Bundle::without_transaction`].
 	///     - If removing the invalid optional transaction results in an empty
 	///       bundle, the bundle will be considered invalid and no execution
 	///       result will be produced.
 	///
-	/// - If a transaction in the bundle fails gracefully (revert or halt):
-	///     - If the bundle allows this tx to fail [`Bundle::is_allowed_to_fail`],
-	///       the bundle will be considered valid and the execution result will be
-	///       produced including this tx. State changes from the failed
-	///       transaction will be included in the aggregate state, e.g gas used,
-	///       nonces incremented, etc. Cleaning up transactions that are allowed
-	///       to fail and are optional from a bundle is beyond the scope of this
-	///       method. This is implemented by higher levels of the system, such as
-	///       the [`RevertProtection`] step in the pipelines API.
-	///     - If the bundle does not allow this tx to fail, but the transaction is
-	///       optional, then it will be removed from the bundle.
-	///     - If the bundle does not allow this tx to fail and the transaction is
-	///       not optional, then the bundle will be considered invalid and no
-	///       execution result will be produced.
+	/// - Transactions that fail gracefully (revert or halt) and are not optional
+	///   will invalidate the bundle, and no execution result will be produced.
+	///   Bundle transaction can be marked as allowed to fail
+	///   [`Bundle::is_allowed_to_fail`], and failure outcomes are handled
+	///   differently:
+	///     - If the bundle allows the failing transaction to fail, the bundle
+	///       will still be considered valid. The execution result will be
+	///       produced, including this failed transaction. State changes from the
+	///       failed transaction will be included in the aggregate state, e.g.,
+	///       gas used, nonces incremented, etc. Cleaning up transactions that are
+	///       allowed to fail and are optional from a bundle is beyond the scope
+	///       of this method. This is implemented by higher levels of the system,
+	///       such as the [`RevertProtection`] step in the pipelines API.
+	///     - If the bundle does not allow this failed transaction to fail, but
+	///       the transaction is optional, then it will be removed from the
+	///       bundle. The bundle stays valid.
+	///
+	/// See truth table:
+	/// | success | allowed_to_fail | optional | Action  |
+	/// | ------: | :-------------: | :------: | :------ |
+	/// |    true |   *don’t care*  |   *any*  | include |
+	/// |   false |       true      |   *any*  | include |
+	/// |   false |      false      |   true   | discard |
+	/// |   false |      false      |   false  | error   |
 	///
 	/// - At the end of the bundle execution, the bundle implementation will have
 	///   a chance to validate any other platform-specific post-execution
 	///   requirements. For example, the bundle may require that the state after
 	///   the execution has a certain balance in some account, etc. If this check
-	///   fails, the bundle will be considered invalid and no execution result
+	///   fails, the bundle will be considered invalid, and no execution result
 	///   will be produced.
 	fn execute_bundle<DB>(
 		bundle: types::Bundle<P>,
@@ -196,65 +205,46 @@ impl<P: Platform> Executable<P> {
 		let mut results = Vec::with_capacity(bundle.transactions().len());
 
 		for transaction in bundle.transactions() {
+			let tx_hash = *transaction.tx_hash();
+			let optional = bundle.is_optional(tx_hash);
+			let allowed_to_fail = bundle.is_allowed_to_fail(tx_hash);
+
 			let result = evm_config
 				.evm_with_env(&mut db, evm_env.clone())
 				.transact(transaction);
 
 			match result {
-				// valid transaction
-				Ok(ExecResultAndState { result, state }) => {
-					if !result.is_success() {
-						match (
-							bundle.is_allowed_to_fail(*transaction.tx_hash()),
-							bundle.is_optional(*transaction.tx_hash()),
-						) {
-							// transaction is not allowed to fail, but it is optional,
-							// we can remove it from the bundle and continue executing the
-							// bundle.
-							(false, true) => {
-								discarded.push(*transaction.tx_hash());
-								continue;
-							}
-
-							// transaction is not allowed to fail and is not optional,
-							// this invalidates the whole bundle and we cannot produce an
-							// execution result.
-							(false, false) => {
-								return Err(ExecutionError::BundleTransactionReverted(
-									*transaction.tx_hash(),
-								));
-							}
-							// transaction is allowed to fail, include it
-							_ => {}
-						}
-					}
-
-					// transaction will be included
+				// Valid transaction or allowed to fail: include it in the bundle
+				Ok(ExecResultAndState { result, state })
+					if result.is_success() || allowed_to_fail =>
+				{
 					results.push(result);
 					db.commit(state);
 				}
-				// Invalid transaction
+				// Optional failing transaction, not allowed to fail: discard it
+				Ok(_) if optional => {
+					discarded.push(tx_hash);
+				}
+				// Non-Optional failing transaction, not allowed to fail: invalidate the
+				// bundle
+				Ok(_) => {
+					return Err(ExecutionError::BundleTransactionReverted(tx_hash));
+				}
+				// Optional invalid transaction: discard it
+				Err(_) if optional => {
+					discarded.push(tx_hash);
+				}
+				// Non-Optional invalid transaction: invalidate the bundle
 				Err(err) => {
-					if bundle.is_optional(*transaction.tx_hash()) {
-						// If the transaction is optional, we can skip it
-						// and continue with the next transaction.
-						discarded.push(*transaction.tx_hash());
-						continue;
-					}
-
-					return Err(ExecutionError::InvalidBundleTransaction(
-						*transaction.tx_hash(),
-						err,
-					));
+					return Err(ExecutionError::InvalidBundleTransaction(tx_hash, err));
 				}
 			}
 		}
 
-		// produce a new bundle without the discarded transactions
-		let mut bundle = bundle;
-		for tx in discarded {
-			bundle = bundle.without_transaction(tx);
-		}
+		// reduce the bundle by removing discarded transactions
+		let bundle = discarded
+			.into_iter()
+			.fold(bundle, |b, tx| b.without_transaction(tx));
 
 		// extract all the state changes that were made by executing
 		// transactions in this bundle.
@@ -299,7 +289,7 @@ impl<P: Platform> Executable<P> {
 	}
 }
 
-/// Convinience trait that allows all types that can be executed to be used as a
+/// Convenience trait that allows all types that can be executed to be used as a
 /// parameter to the `Checkpoint::apply` method.
 pub trait IntoExecutable<P: Platform, S = ()> {
 	fn try_into_executable(self) -> Result<Executable<P>, RecoveryError>;
@@ -315,7 +305,7 @@ impl<P: Platform> IntoExecutable<P, Variant<0>> for types::Transaction<P> {
 	}
 }
 
-/// Transactions from the transaction pool can be converted infalliably into
+/// Transactions from the transaction pool can be converted infallibly into
 /// an executable because the transaction pool discards transactions
 /// that have invalid signatures.
 impl<P: Platform> IntoExecutable<P, Variant<1>>
@@ -326,7 +316,7 @@ impl<P: Platform> IntoExecutable<P, Variant<1>>
 	}
 }
 
-/// Signature recovered individual transactions are always infalliably
+/// Signature-recovered individual transactions are always infallibly
 /// convertable into an executable.
 impl<P: Platform> IntoExecutable<P, Variant<2>>
 	for Recovered<types::Transaction<P>>
@@ -336,7 +326,7 @@ impl<P: Platform> IntoExecutable<P, Variant<2>>
 	}
 }
 
-/// Bundles are also convertible into an executable infalliably.
+/// Bundles are also convertible into an executable infallibly.
 /// Signature recovery is part of the bundle assembly logic.
 impl<P: Platform> IntoExecutable<P, Variant<3>> for types::Bundle<P> {
 	fn try_into_executable(self) -> Result<Executable<P>, RecoveryError> {
@@ -351,7 +341,7 @@ impl<P: Platform> IntoExecutable<P, Variant<4>> for Executable<P> {
 	}
 }
 
-/// Another checkpoints contents
+/// Another checkpoint content
 impl<P: Platform> IntoExecutable<P, Variant<5>> for Checkpoint<P> {
 	fn try_into_executable(self) -> Result<Executable<P>, RecoveryError> {
 		(&self).try_into_executable()
@@ -360,10 +350,10 @@ impl<P: Platform> IntoExecutable<P, Variant<5>> for Checkpoint<P> {
 
 impl<P: Platform> IntoExecutable<P, Variant<6>> for &Checkpoint<P> {
 	fn try_into_executable(self) -> Result<Executable<P>, RecoveryError> {
-		if let Some(bundle) = self.as_bundle() {
-			Ok(Executable::Bundle(bundle.clone()))
-		} else if let Some(tx) = self.as_transaction() {
+		if let Some(tx) = self.as_transaction() {
 			Ok(Executable::Transaction(tx.clone()))
+		} else if let Some(bundle) = self.as_bundle() {
+			Ok(Executable::Bundle(bundle.clone()))
 		} else {
 			Err(RecoveryError::new())
 		}
@@ -387,6 +377,7 @@ impl<P: PlatformWithRpcTypes> IntoExecutable<P, Variant<7>>
 /// transaction executions that make up this overall result.
 #[derive(Debug, Clone)]
 pub struct ExecutionResult<P: Platform> {
+	/// The executable used to produce this result.
 	source: Executable<P>,
 
 	/// For transactions this is guaranteed to be a single-element vector,
@@ -399,13 +390,13 @@ pub struct ExecutionResult<P: Platform> {
 }
 
 impl<P: Platform> ExecutionResult<P> {
-	/// Returns the executable that was executed to produce this result.
+	/// Returns the executable used to produce this result.
 	pub const fn source(&self) -> &Executable<P> {
 		&self.source
 	}
 
-	/// Returns the aggregate state changes that were made by executing
-	/// the transactions in this execution unit.
+	/// Returns the aggregate state changes made by executing the transactions in
+	/// this execution unit.
 	pub const fn state(&self) -> &BundleState {
 		&self.state
 	}
@@ -420,8 +411,7 @@ impl<P: Platform> ExecutionResult<P> {
 		self.results.as_slice()
 	}
 
-	/// Returns individual transactions that were executed as part of this
-	/// execution unit.
+	/// Returns individual transactions executed as part of this execution unit.
 	pub fn transactions(&self) -> &[Recovered<types::Transaction<P>>] {
 		self.source().transactions()
 	}
