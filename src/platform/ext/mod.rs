@@ -4,6 +4,7 @@
 use {
 	crate::{alloy, prelude::*, reth},
 	alloy::{
+		consensus::transaction::TxHashRef,
 		network::{TransactionBuilder, TxSignerSync, UnbuiltTransactionError},
 		signers::Signature,
 	},

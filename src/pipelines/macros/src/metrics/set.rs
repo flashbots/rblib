@@ -64,10 +64,10 @@ pub(crate) fn metrics_set_derive(input: TokenStream) -> TokenStream {
 		let mut describe: Option<String> = None;
 
 		for attr in &field.attrs {
-			if attr.path().is_ident("metric") {
-				if let Err(e) = parse_metric_attr(attr, &mut rename, &mut describe) {
-					return e.to_compile_error().into();
-				}
+			if attr.path().is_ident("metric")
+				&& let Err(e) = parse_metric_attr(attr, &mut rename, &mut describe)
+			{
+				return e.to_compile_error().into();
 			}
 		}
 
@@ -188,17 +188,16 @@ enum MetricKind {
 }
 
 fn classify(ty: &Type) -> MetricKind {
-	if let Type::Path(tp) = ty {
-		if let Some(seg) = tp.path.segments.last() {
-			if matches!(seg.arguments, PathArguments::None) {
-				return match seg.ident.to_string().as_str() {
-					"Counter" => MetricKind::Counter,
-					"Gauge" => MetricKind::Gauge,
-					"Histogram" => MetricKind::Histogram,
-					_ => MetricKind::Other,
-				};
-			}
-		}
+	if let Type::Path(tp) = ty
+		&& let Some(seg) = tp.path.segments.last()
+		&& matches!(seg.arguments, PathArguments::None)
+	{
+		return match seg.ident.to_string().as_str() {
+			"Counter" => MetricKind::Counter,
+			"Gauge" => MetricKind::Gauge,
+			"Histogram" => MetricKind::Histogram,
+			_ => MetricKind::Other,
+		};
 	}
 	MetricKind::Other
 }

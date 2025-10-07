@@ -78,10 +78,10 @@ impl<P: Platform> StateProviderFactory for GenesisProviderFactory<P> {
 		&self,
 		number_or_tag: BlockNumberOrTag,
 	) -> ProviderResult<StateProviderBox> {
-		if let BlockNumberOrTag::Number(block_number) = number_or_tag {
-			if block_number != 0 {
-				return self.history_by_block_number(block_number);
-			}
+		if let BlockNumberOrTag::Number(block_number) = number_or_tag
+			&& block_number != 0
+		{
+			return self.history_by_block_number(block_number);
 		}
 
 		Ok(Box::new(self.state_provider.clone()) as StateProviderBox)
@@ -136,6 +136,10 @@ impl<P: Platform> StateProviderFactory for GenesisProviderFactory<P> {
 		_: B256,
 	) -> ProviderResult<Option<StateProviderBox>> {
 		Ok(None)
+	}
+
+	fn maybe_pending(&self) -> ProviderResult<Option<StateProviderBox>> {
+		self.latest().map(Some)
 	}
 }
 
@@ -302,10 +306,10 @@ impl<P: Platform> HeaderProvider for GenesisProviderFactory<P> {
 		let mut result = Vec::new();
 		let mut predicate = predicate;
 		for number in to_range(range) {
-			if let Some(header) = self.sealed_header(number)? {
-				if predicate(&header) {
-					result.push(header);
-				}
+			if let Some(header) = self.sealed_header(number)?
+				&& predicate(&header)
+			{
+				result.push(header);
 			}
 		}
 		Ok(result)

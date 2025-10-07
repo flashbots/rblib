@@ -1,4 +1,4 @@
-use {super::*, reth::ethereum::primitives::SignedTransaction};
+use super::*;
 
 /// Extension trait for [`types::Bundle`] that improves Dev Ex when
 /// working with platform-agnostic bundles.

@@ -1,7 +1,7 @@
 use {
 	crate::{alloy, prelude::*, reth},
 	alloy::{
-		consensus::crypto::RecoveryError,
+		consensus::{crypto::RecoveryError, transaction::TxHashRef},
 		primitives::{B256, TxHash},
 	},
 	reth::{

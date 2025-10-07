@@ -1,7 +1,7 @@
 use {
 	crate::{alloy, prelude::*, reth},
 	alloy::{
-		consensus::BlockHeader,
+		consensus::{BlockHeader, transaction::TxHashRef},
 		eips::{Decodable2718, Encodable2718},
 		network::eip2718::Eip2718Error,
 		primitives::{B256, Keccak256, TxHash},
@@ -14,7 +14,6 @@ use {
 	reth::{
 		ethereum::primitives::{
 			Recovered,
-			SignedTransaction,
 			SignerRecoverable,
 			crypto::RecoveryError,
 		},

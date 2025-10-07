@@ -1,16 +1,11 @@
 use {
 	crate::{
 		alloy::{
-			consensus::Transaction,
+			consensus::transaction::{Transaction, TxHashRef},
 			primitives::{Address, B256, U256},
 		},
 		prelude::*,
-		reth::{
-			errors::ProviderError,
-			ethereum::primitives::SignedTransaction,
-			primitives::Recovered,
-			revm::DatabaseRef,
-		},
+		reth::{errors::ProviderError, primitives::Recovered, revm::DatabaseRef},
 	},
 	itertools::Itertools,
 	std::time::Instant,

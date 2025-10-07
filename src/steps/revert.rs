@@ -1,10 +1,10 @@
 use {
 	crate::{alloy, prelude::*, reth},
-	alloy::primitives::TxHash,
+	alloy::{consensus::transaction::TxHashRef, primitives::TxHash},
 	core::sync::atomic::{AtomicU32, AtomicU64, Ordering},
 	derive_more::Deref,
 	metrics::{Counter, Histogram},
-	reth::{ethereum::primitives::SignedTransaction, primitives::Recovered},
+	reth::primitives::Recovered,
 	std::sync::Arc,
 };
 

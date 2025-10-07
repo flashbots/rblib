@@ -1,7 +1,10 @@
 use crate::{
-	alloy::{consensus::Transaction, primitives::TxHash},
+	alloy::{
+		consensus::transaction::{Transaction, TxHashRef},
+		primitives::TxHash,
+	},
 	prelude::*,
-	reth::{ethereum::primitives::SignedTransaction, primitives::Recovered},
+	reth::primitives::Recovered,
 };
 
 /// Quality of Life extensions for the `Span` type.

@@ -258,20 +258,19 @@ fn is_eyre_result_unit(ty: &Type) -> bool {
 
 	if let SynType::Path(tp) = ty {
 		let segments = &tp.path.segments;
-		if let Some(last) = segments.last() {
-			if last.ident == "Result" {
-				// Ensure the path contains `eyre` somewhere, e.g. `eyre::Result`
-				let has_eyre = segments.iter().any(|s| s.ident == "eyre");
-				if !has_eyre {
-					return false;
-				}
-				if let PathArguments::AngleBracketed(ab) = &last.arguments {
-					if let Some(GenericArgument::Type(SynType::Tuple(tup))) =
-						ab.args.first()
-					{
-						return tup.elems.is_empty();
-					}
-				}
+		if let Some(last) = segments.last()
+			&& last.ident == "Result"
+		{
+			// Ensure the path contains `eyre` somewhere, e.g. `eyre::Result`
+			let has_eyre = segments.iter().any(|s| s.ident == "eyre");
+			if !has_eyre {
+				return false;
+			}
+			if let PathArguments::AngleBracketed(ab) = &last.arguments
+				&& let Some(GenericArgument::Type(SynType::Tuple(tup))) =
+					ab.args.first()
+			{
+				return tup.elems.is_empty();
 			}
 		}
 	}

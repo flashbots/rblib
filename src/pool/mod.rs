@@ -3,15 +3,12 @@
 use {
 	crate::{alloy, prelude::*, reth},
 	alloy::{
-		consensus::crypto::RecoveryError,
+		consensus::{crypto::RecoveryError, transaction::TxHashRef},
 		primitives::{B256, TxHash},
 	},
 	dashmap::{DashMap, DashSet},
 	parking_lot::RwLock,
-	reth::{
-		ethereum::primitives::SignedTransaction,
-		primitives::{Recovered, SealedHeader},
-	},
+	reth::primitives::{Recovered, SealedHeader},
 	std::sync::Arc,
 };
 

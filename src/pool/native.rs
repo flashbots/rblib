@@ -63,12 +63,13 @@ struct TransactionPoolVTable<P: Platform> {
 	clone: fn(*const u8, Self) -> Self,
 	pool_size: fn(*const u8) -> PoolSize,
 	block_info: fn(*const u8) -> BlockInfo,
-	add_transaction:
-		fn(
-			*const u8,
-			TransactionOrigin,
-			P::PooledTransaction,
-		) -> Pin<Box<dyn Future<Output = PoolResult<TxHash>> + Send>>,
+	add_transaction: fn(
+		*const u8,
+		TransactionOrigin,
+		P::PooledTransaction,
+	) -> Pin<
+		Box<dyn Future<Output = PoolResult<AddedTransactionOutcome>> + Send>,
+	>,
 	add_transaction_and_subscribe: fn(
 		*const u8,
 		TransactionOrigin,
@@ -76,12 +77,19 @@ struct TransactionPoolVTable<P: Platform> {
 	) -> Pin<
 		Box<dyn Future<Output = PoolResult<TransactionEvents>> + Send>,
 	>,
-	add_transactions:
-		fn(
-			*const u8,
-			TransactionOrigin,
-			Vec<P::PooledTransaction>,
-		) -> Pin<Box<dyn Future<Output = Vec<PoolResult<TxHash>>> + Send>>,
+	add_transactions: fn(
+		*const u8,
+		TransactionOrigin,
+		Vec<P::PooledTransaction>,
+	) -> Pin<
+		Box<dyn Future<Output = Vec<PoolResult<AddedTransactionOutcome>>> + Send>,
+	>,
+	add_transactions_with_origins: fn(
+		*const u8,
+		Vec<(TransactionOrigin, P::PooledTransaction)>,
+	) -> Pin<
+		Box<dyn Future<Output = Vec<PoolResult<AddedTransactionOutcome>>> + Send>,
+	>,
 	transaction_event_listener:
 		fn(*const u8, TxHash) -> Option<TransactionEvents>,
 	all_transactions_event_listener:
@@ -143,6 +151,7 @@ struct TransactionPoolVTable<P: Platform> {
 	queued_transactions:
 		fn(*const u8) -> Vec<Arc<ValidPoolTransaction<P::PooledTransaction>>>,
 	all_transactions: fn(*const u8) -> AllPoolTransactions<P::PooledTransaction>,
+	all_transactions_hashes: fn(*const u8) -> Vec<TxHash>,
 	remove_transactions:
 		fn(
 			*const u8,
@@ -280,6 +289,10 @@ impl<P: Platform> TransactionPoolVTable<P> {
 				let pool = unsafe { &*self_ptr.cast::<Pool>() };
 				pool.add_transactions(origin, txs).boxed()
 			},
+			add_transactions_with_origins: |self_ptr: *const u8, txs| {
+				let pool = unsafe { &*self_ptr.cast::<Pool>() };
+				pool.add_transactions_with_origins(txs).boxed()
+			},
 			transaction_event_listener: |self_ptr: *const u8, tx_hash| {
 				let pool = unsafe { &*self_ptr.cast::<Pool>() };
 				pool.transaction_event_listener(tx_hash)
@@ -287,6 +300,10 @@ impl<P: Platform> TransactionPoolVTable<P> {
 			all_transactions_event_listener: |self_ptr: *const u8| {
 				let pool = unsafe { &*self_ptr.cast::<Pool>() };
 				pool.all_transactions_event_listener()
+			},
+			all_transactions_hashes: |self_ptr: *const u8| {
+				let pool = unsafe { &*self_ptr.cast::<Pool>() };
+				pool.all_transaction_hashes()
 			},
 			pending_transactions_listener_for: |self_ptr: *const u8, kind| {
 				let pool = unsafe { &*self_ptr.cast::<Pool>() };
@@ -495,11 +512,13 @@ impl<P: Platform> RethTransactionPoolTrait for NativeTransactionPool<P> {
 		&self,
 		origin: TransactionOrigin,
 		transaction: Self::Transaction,
-	) -> impl Future<Output = PoolResult<TxHash>> + Send {
+	) -> impl Future<Output = PoolResult<AddedTransactionOutcome>> + Send {
 		(self.vtable.add_transaction)(self.vtable.self_ptr, origin, transaction)
 	}
 
-	/// Adds the given _unvalidated_ transaction into the pool.
+	/// Adds the given _unvalidated_ transactions into the pool.
+	///
+	/// All transactions will use the same `origin`.
 	///
 	/// Returns a list of results.
 	///
@@ -508,8 +527,23 @@ impl<P: Platform> RethTransactionPoolTrait for NativeTransactionPool<P> {
 		&self,
 		origin: TransactionOrigin,
 		transactions: Vec<Self::Transaction>,
-	) -> impl Future<Output = Vec<PoolResult<TxHash>>> + Send {
+	) -> impl Future<Output = Vec<PoolResult<AddedTransactionOutcome>>> + Send {
 		(self.vtable.add_transactions)(self.vtable.self_ptr, origin, transactions)
+	}
+
+	/// Adds multiple _unvalidated_ transactions with individual origins.
+	///
+	/// Each transaction can have its own [`TransactionOrigin`].
+	///
+	/// Consumer: RPC
+	fn add_transactions_with_origins(
+		&self,
+		transactions: Vec<(TransactionOrigin, Self::Transaction)>,
+	) -> impl Future<Output = Vec<PoolResult<AddedTransactionOutcome>>> + Send {
+		(self.vtable.add_transactions_with_origins)(
+			self.vtable.self_ptr,
+			transactions,
+		)
 	}
 
 	/// Returns a new transaction change event stream for the given transaction.
@@ -716,14 +750,27 @@ impl<P: Platform> RethTransactionPoolTrait for NativeTransactionPool<P> {
 	}
 
 	/// Returns all transactions that are currently in the pool grouped by whether
-	/// they are ready
-	/// for inclusion in the next block or not.
+	/// they are ready for inclusion in the next block or not.
 	///
 	/// This is primarily used for the `txpool_` namespace: <https://geth.ethereum.org/docs/interacting-with-geth/rpc/ns-txpool>
 	///
 	/// Consumer: RPC
 	fn all_transactions(&self) -> AllPoolTransactions<Self::Transaction> {
 		(self.vtable.all_transactions)(self.vtable.self_ptr)
+	}
+
+	/// Returns the _hashes_ of all transactions regardless of whether they can be
+	/// propagated or not.
+	///
+	/// Unlike [`Self::pooled_transaction_hashes`] this doesn't consider whether
+	/// the transaction can be propagated or not.
+	///
+	/// Note: This returns a `Vec` but should guarantee that all hashes are
+	/// unique.
+	///
+	/// Consumer: Utility
+	fn all_transaction_hashes(&self) -> Vec<TxHash> {
+		(self.vtable.all_transactions_hashes)(self.vtable.self_ptr)
 	}
 
 	/// Removes all transactions corresponding to the given hashes.

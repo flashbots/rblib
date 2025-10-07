@@ -72,11 +72,11 @@ impl<P: Platform> Iterator for FixedTransactions<P> {
 			let nonce = pooled.nonce();
 			let sender_id = self.senders.sender_id_or_create(pooled.sender());
 
-			if let Some(id) = self.invalid.get(&sender_id) {
-				if id.nonce <= nonce {
-					// transaction or one of its ancestors is marked as invalid, skip it
-					continue;
-				}
+			if let Some(id) = self.invalid.get(&sender_id)
+				&& id.nonce <= nonce
+			{
+				// transaction or one of its ancestors is marked as invalid, skip it
+				continue;
 			}
 
 			let wrapper = ValidPoolTransaction {

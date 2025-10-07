@@ -1,15 +1,14 @@
 use {
 	super::*,
 	crate::{alloy, reth},
-	alloy::{consensus::Transaction, primitives::B256},
+	alloy::{
+		consensus::transaction::{Transaction, TxHashRef},
+		primitives::B256,
+	},
 	core::sync::atomic::{AtomicU32, Ordering},
 	dashmap::DashSet,
 	metrics::{Counter, Histogram},
-	reth::{
-		chainspec::MIN_TRANSACTION_GAS,
-		ethereum::primitives::SignedTransaction,
-		payload::builder::PayloadId,
-	},
+	reth::{chainspec::MIN_TRANSACTION_GAS, payload::builder::PayloadId},
 	std::{collections::HashSet, sync::Arc},
 };
 
@@ -296,12 +295,12 @@ impl<'a, P: Platform> Run<'a, P> {
 	/// Returns `true` if the step should not attempt to add this specific order,
 	/// but may include other orders that are more suitable.
 	fn should_skip(&self, order: &Order<P>) -> bool {
-		if let Some(max_transactions) = self.max_transactions {
-			if order.transactions().len() + self.txs_included > max_transactions {
-				// This order has too many transactions to fit in the remaining
-				// transaction limit for this step, skip it.
-				return true;
-			}
+		if let Some(max_transactions) = self.max_transactions
+			&& order.transactions().len() + self.txs_included > max_transactions
+		{
+			// This order has too many transactions to fit in the remaining
+			// transaction limit for this step, skip it.
+			return true;
 		}
 
 		if let Some(max_bundles) = self.step.max_new_bundles

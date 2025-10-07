@@ -2,12 +2,11 @@ use {
 	super::exec::IntoExecutable,
 	crate::{alloy, prelude::*, reth},
 	alloy::{
-		consensus::crypto::RecoveryError,
+		consensus::{crypto::RecoveryError, transaction::TxHashRef},
 		primitives::{Address, B256, StorageValue},
 	},
 	core::fmt::{Debug, Display},
 	reth::{
-		core::primitives::SignedTransaction,
 		errors::ProviderError,
 		primitives::Recovered,
 		revm::{
@@ -153,10 +152,10 @@ impl<P: Platform> Checkpoint<P> {
 	/// If this checkpoint is created from a single transaction, returns a
 	/// reference to this transaction. Otherwise, returns `None`.
 	pub fn as_transaction(&self) -> Option<&Recovered<types::Transaction<P>>> {
-		if let Mutation::Executable(result) = &self.inner.mutation {
-			if let Executable::Transaction(tx) = result.source() {
-				return Some(tx);
-			}
+		if let Mutation::Executable(result) = &self.inner.mutation
+			&& let Executable::Transaction(tx) = result.source()
+		{
+			return Some(tx);
 		}
 		None
 	}
@@ -164,10 +163,10 @@ impl<P: Platform> Checkpoint<P> {
 	/// If this checkpoint is created from a bundle, returns a reference to this
 	/// bundle. Otherwise, returns `None`.
 	pub fn as_bundle(&self) -> Option<&types::Bundle<P>> {
-		if let Mutation::Executable(result) = &self.inner.mutation {
-			if let Executable::Bundle(bundle) = result.source() {
-				return Some(bundle);
-			}
+		if let Mutation::Executable(result) = &self.inner.mutation
+			&& let Executable::Bundle(bundle) = result.source()
+		{
+			return Some(bundle);
 		}
 		None
 	}
