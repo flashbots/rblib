@@ -89,7 +89,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn sequencer_txs_not_included_without_step() {
-		let output = Box::pin(OneStep::new(NoOpStep).run()).await.unwrap();
+		let output = OneStep::new(NoOpStep).run().await.unwrap();
 
 		let ControlFlow::Ok(payload) = output else {
 			panic!("Expected Ok payload, got: {output:?}");
@@ -103,7 +103,8 @@ mod tests {
 
 	#[tokio::test]
 	async fn sequencer_txs_are_included() {
-		let output = Box::pin(OneStep::<Optimism>::new(OptimismPrologue).run())
+		let output = OneStep::<Optimism>::new(OptimismPrologue)
+			.run()
 			.await
 			.unwrap();
 
@@ -142,13 +143,11 @@ mod tests {
 
 	#[tokio::test]
 	async fn fails_on_non_empty_payload() {
-		let output = Box::pin(
-			OneStep::<Optimism>::new(OptimismPrologue)
-				.with_payload_tx(|tx| tx.transfer().with_default_signer().nonce(0))
-				.run(),
-		)
-		.await
-		.unwrap();
+		let output = OneStep::<Optimism>::new(OptimismPrologue)
+			.with_payload_tx(|tx| tx.transfer().with_default_signer().nonce(0))
+			.run()
+			.await
+			.unwrap();
 
 		let ControlFlow::Fail(err) = output else {
 			panic!("Expected Fail, got: {output:?}");

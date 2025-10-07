@@ -5,7 +5,7 @@ use {
 	core::any::Any,
 	futures::Stream,
 	reth::payload::builder::PayloadBuilderError,
-	std::sync::Arc,
+	std::{pin::Pin, sync::Arc},
 	tokio::sync::{
 		Mutex,
 		mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
@@ -226,62 +226,66 @@ impl<P: PlatformWithRpcTypes + TestNodeFactory<P>> OneStep<P> {
 
 	/// Runs a single invocation of the step with the prepared environment and
 	/// returns the control flow result of the step execution.
-	pub async fn run(mut self) -> eyre::Result<ControlFlow<P>> {
-		let local_node = P::create_test_node(self.pipeline).await?;
-		let input_txs = self
-			.payload_input
-			.into_iter()
-			.map(|input| -> eyre::Result<InputPayloadItem<P>> {
-				Ok(match input {
-					InputPayloadItemFn::Barrier => InputPayloadItem::Barrier,
-					InputPayloadItemFn::NamedBarrier(name) => {
-						InputPayloadItem::NamedBarrier(name)
-					}
-					InputPayloadItemFn::Tx(mut builder) => InputPayloadItem::Tx(
-						builder(
-							local_node
-								.build_tx()
-								.with_max_fee_per_gas(2_000_000_001)
-								.with_max_priority_fee_per_gas(1),
-						)
-						.build_with_known_signer()?,
-					),
-					InputPayloadItemFn::Bundle(bundle) => {
-						InputPayloadItem::Bundle(bundle)
-					}
+	pub fn run(
+		mut self,
+	) -> Pin<Box<dyn Future<Output = eyre::Result<ControlFlow<P>>>>> {
+		Box::pin(async move {
+			let local_node = P::create_test_node(self.pipeline).await?;
+			let input_txs = self
+				.payload_input
+				.into_iter()
+				.map(|input| -> eyre::Result<InputPayloadItem<P>> {
+					Ok(match input {
+						InputPayloadItemFn::Barrier => InputPayloadItem::Barrier,
+						InputPayloadItemFn::NamedBarrier(name) => {
+							InputPayloadItem::NamedBarrier(name)
+						}
+						InputPayloadItemFn::Tx(mut builder) => InputPayloadItem::Tx(
+							builder(
+								local_node
+									.build_tx()
+									.with_max_fee_per_gas(2_000_000_001)
+									.with_max_priority_fee_per_gas(1),
+							)
+							.build_with_known_signer()?,
+						),
+						InputPayloadItemFn::Bundle(bundle) => {
+							InputPayloadItem::Bundle(bundle)
+						}
+					})
 				})
-			})
-			.collect::<Result<Vec<_>, _>>()?;
+				.collect::<Result<Vec<_>, _>>()?;
 
-		for tx in input_txs {
-			self.payload_tx.send(tx)?;
-		}
+			for tx in input_txs {
+				self.payload_tx.send(tx)?;
+			}
 
-		let pool_txs = self
-			.pool_txs
-			.into_iter()
-			.map(|mut tx| tx(local_node.build_tx()))
-			.collect::<Vec<_>>();
+			let pool_txs = self
+				.pool_txs
+				.into_iter()
+				.map(|mut tx| tx(local_node.build_tx()))
+				.collect::<Vec<_>>();
 
-		for tx in pool_txs {
-			let _ = local_node.send_tx(tx).await?;
-		}
+			for tx in pool_txs {
+				let _ = local_node.send_tx(tx).await?;
+			}
 
-		let _ = local_node.next_block().await;
+			let _ = local_node.next_block().await;
 
-		let ok_res = self.ok_rx.try_recv();
-		let break_res = self.break_rx.try_recv();
-		let fail_res = self.fail_rx.try_recv();
+			let ok_res = self.ok_rx.try_recv();
+			let break_res = self.break_rx.try_recv();
+			let fail_res = self.fail_rx.try_recv();
 
-		if let Ok(ok) = ok_res {
-			return Ok(ControlFlow::Ok(ok));
-		}
+			if let Ok(ok) = ok_res {
+				return Ok(ControlFlow::Ok(ok));
+			}
 
-		if let Ok(fail_res) = fail_res {
-			return Ok(ControlFlow::Fail(fail_res));
-		}
+			if let Ok(fail_res) = fail_res {
+				return Ok(ControlFlow::Fail(fail_res));
+			}
 
-		Ok(ControlFlow::Break(break_res?))
+			Ok(ControlFlow::Break(break_res?))
+		})
 	}
 }
 

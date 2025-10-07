@@ -21,6 +21,7 @@ mod node;
 mod platform;
 mod step;
 
+#[allow(unused_imports)]
 pub(crate) use step::fake_step;
 pub use {
 	accounts::{FundedAccounts, WithFundedAccounts},
