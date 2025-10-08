@@ -57,10 +57,10 @@ pub trait CheckpointExt<P: Platform>: super::sealed::Sealed {
 	/// block payload we're building to the current checkpoint.
 	fn history(&self) -> Span<P>;
 
-	/// Returns a span that includes all mutable history of this checkpoint,
-	/// which is all preceeding checkpoints from the last barrier, or the entire
+	/// Returns a span that includes all staging history of this checkpoint,
+	/// which is all preceding checkpoints from the last barrier, or the entire
 	/// history if there is no barrier checkpoint.
-	fn history_mut(&self) -> Span<P> {
+	fn history_staging(&self) -> Span<P> {
 		let history = self.history();
 		let immutable_prefix = history
 			.iter()
@@ -69,11 +69,11 @@ pub trait CheckpointExt<P: Platform>: super::sealed::Sealed {
 		history.skip(immutable_prefix)
 	}
 
-	/// Returns a span that includes all checkpoints in the immutable history,
+	/// Returns a span that includes all checkpoints in the sealed history,
 	/// that is the history from the beginning of the block until the last
 	/// barrier included. If there are no barriers, the entire history is
 	/// returned.
-	fn history_const(&self) -> Span<P> {
+	fn history_sealed(&self) -> Span<P> {
 		let history = self.history();
 		let immutable_prefix = history
 			.iter()

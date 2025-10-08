@@ -26,7 +26,7 @@ impl<P: Platform> OrderScore<P> for CoinbaseProfitScore<P> {
 	}
 }
 
-/// This step will sort the checkpoints in the mutable part of the payload by
+/// This step will sort the checkpoints in the staging part of the payload by
 /// the difference in the coinbase account balance before and after they are
 /// executed.
 pub type OrderByCoinbaseProfit<P: Platform> =

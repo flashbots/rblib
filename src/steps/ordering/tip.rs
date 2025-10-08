@@ -20,7 +20,7 @@ impl<P: Platform> OrderScore<P> for PriorityFeeScore<P> {
 /// priority fee. During the sorting the transactions will preserve their
 /// sender, nonce dependencies.
 ///
-/// Sorting happens only for the mutable part of the payload, i.e. after
+/// Sorting happens only for the staging part of the payload, i.e. after
 /// the last barrier checkpoint. Anything prior to the last barrier
 /// checkpoint is considered immutable and will not be reordered.
 pub type OrderByPriorityFee<P: Platform> = OrderBy<P, PriorityFeeScore<P>>;

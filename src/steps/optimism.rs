@@ -96,9 +96,9 @@ mod tests {
 		};
 
 		assert_eq!(payload.history().transactions().count(), 0);
-		assert_eq!(payload.history_const().len(), 1); // only baseline checkpoint
-		assert_eq!(payload.history_mut().len(), 1); // only last barrier
-		assert_eq!(payload.history_mut().transactions().count(), 0);
+		assert_eq!(payload.history_sealed().len(), 1); // only baseline checkpoint
+		assert_eq!(payload.history_staging().len(), 1); // only last barrier
+		assert_eq!(payload.history_staging().transactions().count(), 0);
 	}
 
 	#[tokio::test]
@@ -124,19 +124,19 @@ mod tests {
 		);
 
 		assert_eq!(
-			payload.history_const().len(),
+			payload.history_sealed().len(),
 			3,
-			"immutable history should have 3 checkpoints: baseline, sequencer tx \
-			 and last barrier"
+			"sealed history should have 3 checkpoints: baseline, sequencer tx and \
+			 last barrier"
 		);
 
 		assert_eq!(
-			payload.history_mut().len(),
+			payload.history_staging().len(),
 			1,
-			"mutable history should have 1 checkpoint: last barrier"
+			"staging history should have 1 checkpoint: last barrier"
 		);
 
-		let const_history = payload.history_const();
+		let const_history = payload.history_sealed();
 		let first_tx = const_history.transactions().next().unwrap();
 		assert!(first_tx.is_deposit(), "Sequencer tx should be a deposit");
 	}

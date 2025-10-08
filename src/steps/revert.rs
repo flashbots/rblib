@@ -64,9 +64,9 @@ impl<P: Platform> Step<P> for RemoveRevertedTransactions {
 			return ControlFlow::Ok(payload);
 		}
 
-		// we're working only with the mutable history of the payload,
+		// we're working only with the staging history of the payload,
 		// if a reverting transaction was already commited, we will not remove it.
-		let history = payload.history_mut();
+		let history = payload.history_staging();
 
 		// First identify a valid prefix of the payload history that does not
 		// contain any reverts we can remove. This will be the baseline checkpoint

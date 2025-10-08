@@ -193,7 +193,7 @@ impl<P: Platform> Checkpoint<P> {
 
 	/// Creates a new checkpoint on top of the current checkpoint that introduces
 	/// a barrier. This new checkpoint will be now considered the new beginning of
-	/// mutable history.
+	/// staging history.
 	#[must_use]
 	pub fn barrier(&self) -> Self {
 		Self::apply_with(self, Mutation::Barrier)
@@ -219,7 +219,7 @@ impl<P: Platform> Checkpoint<P> {
 
 	/// Creates a new checkpoint on top of the current checkpoint that introduces
 	/// a named barrier. This new checkpoint will be now considered the new
-	/// beginning of mutable history.
+	/// beginning of staging history.
 	#[must_use]
 	pub fn named_barrier(&self, name: impl Into<String>) -> Self {
 		Self {
@@ -282,7 +282,7 @@ enum Mutation<P: Platform> {
 	/// do not modify the commited state of the payload in process.
 	///
 	/// If there are multiple barriers in the history, the last one is considered
-	/// as the beginning of the mutable history.
+	/// as the beginning of the staging history.
 	///
 	/// The very first checkpoint in the history is always a barrier, as it
 	/// represents the baseline checkpoint that has no transactions in its

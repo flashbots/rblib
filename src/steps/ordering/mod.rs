@@ -44,10 +44,10 @@ impl<P: Platform, S: OrderScore<P>> Step<P> for OrderBy<P, S> {
 		payload: Checkpoint<P>,
 		_ctx: StepContext<P>,
 	) -> ControlFlow<P> {
-		// create a span that contains all mutable checkpoints in the payload.
+		// create a span that contains all staged checkpoints in the payload.
 		// We're guaranteed that all checkpoints in this span are executables,
-		// because the mutable history begins after the last barrier checkpoint.
-		let history = payload.history_mut();
+		// because the staging history begins after the last barrier checkpoint.
+		let history = payload.history_staging();
 
 		// Find the correct order of orders in the payload.
 		let ordered = match SortedOrders::<P, S>::try_from(&history) {
