@@ -45,7 +45,7 @@ impl<P: Platform> OrderPool<P> {
 		}
 	}
 
-	/// Invoked when an order was proposed by the pool through thr `best_orders()`
+	/// Invoked when an order was proposed by the pool through the `best_orders()`
 	/// and there was an attempt to include it in a payload. Once an order was
 	/// proposed once by the pool, it will be removed from the orders list and
 	/// will not be proposed again.

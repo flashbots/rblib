@@ -351,7 +351,7 @@ where
 	) -> eyre::Result<PendingTransactionBuilder<types::RpcTypes<P>>> {
 		let request = request.with_from(signer.address());
 
-		// if nonce is not explictly set, fetch it from the provider
+		// if nonce is not explicitly set, fetch it from the provider
 		let request = match request.nonce() {
 			Some(_) => request,
 			None => request.with_nonce(

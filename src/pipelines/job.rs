@@ -155,7 +155,7 @@ where
 
 /// This enum allows us to wrap the `PipelineExecutor` future
 /// and cache the result of the execution. Also, it makes the executor future
-/// clonable, so that many copies of the future could be returned from
+/// cloneable, so that many copies of the future could be returned from
 /// `resolve_kind`.
 ///
 /// Whenever any of the copies of the future is polled, it will poll the
@@ -271,7 +271,7 @@ where
 	}
 }
 
-/// We want this to be clonable because the `resolve_kind` method could
+/// We want this to be cloneable because the `resolve_kind` method could
 /// potentially return multiple copies of the future, and we want all of them to
 /// resolve with the same result at the same time.
 impl<P, Provider> Clone for ExecutorFuture<P, Provider>

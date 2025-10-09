@@ -65,7 +65,7 @@ impl<P: Platform> Step<P> for RemoveRevertedTransactions {
 		}
 
 		// we're working only with the staging history of the payload,
-		// if a reverting transaction was already commited, we will not remove it.
+		// if a reverting transaction was already committed, we will not remove it.
 		let history = payload.history_staging();
 
 		// First identify a valid prefix of the payload history that does not

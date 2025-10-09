@@ -277,8 +277,8 @@ enum Mutation<P: Platform> {
 	/// should not be discarded or reordered. An example of this would be placing
 	/// a barrier after applying sequencer transactions to ensure that they do
 	/// not get reordered by pipelines. Another example would be placing a barrier
-	/// after every commited flashblock, to ensure that any steps in the pipeline
-	/// do not modify the commited state of the payload in process.
+	/// after every committed flashblock, to ensure that any steps in the pipeline
+	/// do not modify the committed state of the payload in process.
 	///
 	/// If there are multiple barriers in the history, the last one is considered
 	/// as the beginning of the staging history.

@@ -183,7 +183,7 @@ impl StepPath {
 	/// Given two paths, where one is an ancestor of the other, returns the
 	/// intermediate paths between them.
 	///
-	/// If the one othe paths is not an ancestor of the other an empty vector is
+	/// If the other path is not an ancestor of the other an empty vector is
 	/// returned.
 	///
 	/// if the paths are equal, an empty vector is returned.

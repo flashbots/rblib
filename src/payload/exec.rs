@@ -314,7 +314,7 @@ impl<P: Platform> IntoExecutable<P, Variant<1>>
 }
 
 /// Signature-recovered individual transactions are always infallibly
-/// convertable into an executable.
+/// convertible into an executable.
 impl<P: Platform> IntoExecutable<P, Variant<2>>
 	for Recovered<types::Transaction<P>>
 {
