@@ -135,6 +135,40 @@ pub trait CheckpointExt<P: Platform>: super::sealed::Sealed {
 	/// first checkpoint in the history of this checkpoint that is created
 	/// by `Checkpoint::new_at_block`.
 	fn building_since(&self) -> Instant;
+
+	/// Returns a span starting at the last checkpoint tagged with `tag` (if
+	/// any) up to and including `self`. If no such tag exists in history,
+	/// returns the full history.
+	fn history_since_tag(&self, tag: &str) -> Span<P> {
+		let history = self.history();
+		let start = history
+			.iter()
+			.rposition(|cp| cp.is_tagged(tag))
+			.unwrap_or(0);
+		history.skip(start)
+	}
+
+	/// Returns the staging history since the last barrier or any tagged
+	/// checkpoint. If neither is present, returns the full history.
+	fn history_since_last_barrier_or_tag(&self) -> Span<P> {
+		let history = self.history();
+		let start = history
+			.iter()
+			.rposition(|cp| cp.is_barrier() || cp.tag().is_some())
+			.unwrap_or(0);
+		history.skip(start)
+	}
+
+	/// Returns the sealed history up to (and excluding) the last barrier or
+	/// tagged checkpoint. If neither is present, returns an empty span.
+	fn history_sealed_until_last_barrier_or_tag(&self) -> Span<P> {
+		let history = self.history();
+		let end = history
+			.iter()
+			.rposition(|cp| cp.is_barrier() || cp.tag().is_some())
+			.map_or(0, |i| i + 1);
+		history.take(end)
+	}
 }
 
 impl<P: Platform> CheckpointExt<P> for Checkpoint<P> {

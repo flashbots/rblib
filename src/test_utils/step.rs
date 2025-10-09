@@ -191,13 +191,16 @@ impl<P: PlatformWithRpcTypes + TestNodeFactory<P>> OneStep<P> {
 		self
 	}
 
-	/// Adds a named barrier to the input payload of the step at the current
+	/// Adds a tagged barrier to the input payload of the step at the current
 	/// position.
 	#[must_use]
-	pub fn with_payload_named_barrier(mut self, name: impl Into<String>) -> Self {
+	pub fn with_payload_tagged_barrier(
+		mut self,
+		name: impl Into<String>,
+	) -> Self {
 		self
 			.payload_input
-			.push(InputPayloadItemFn::NamedBarrier(name.into()));
+			.push(InputPayloadItemFn::TaggedBarrier(name.into()));
 		self
 	}
 
@@ -237,8 +240,8 @@ impl<P: PlatformWithRpcTypes + TestNodeFactory<P>> OneStep<P> {
 				.map(|input| -> eyre::Result<InputPayloadItem<P>> {
 					Ok(match input {
 						InputPayloadItemFn::Barrier => InputPayloadItem::Barrier,
-						InputPayloadItemFn::NamedBarrier(name) => {
-							InputPayloadItem::NamedBarrier(name)
+						InputPayloadItemFn::TaggedBarrier(name) => {
+							InputPayloadItem::TaggedBarrier(name)
 						}
 						InputPayloadItemFn::Tx(mut builder) => InputPayloadItem::Tx(
 							builder(
@@ -315,7 +318,11 @@ impl<P: PlatformWithRpcTypes> Step<P> for PopulatePayload<P> {
 		while let Ok(input) = self.receiver.lock().await.try_recv() {
 			payload = match input {
 				InputPayloadItem::Barrier => payload.barrier(),
-				InputPayloadItem::NamedBarrier(name) => payload.named_barrier(name),
+				InputPayloadItem::TaggedBarrier(name) => {
+					let mut cp = payload.barrier();
+					cp.set_tag(Some(&name));
+					cp
+				}
 				InputPayloadItem::Tx(tx) => {
 					payload.apply(tx).expect("Failed to apply transaction")
 				}
@@ -399,14 +406,14 @@ impl<P: Platform> Step<P> for RecordBreakAndFail<P> {
 
 enum InputPayloadItemFn<P: PlatformWithRpcTypes> {
 	Barrier,
-	NamedBarrier(String),
+	TaggedBarrier(String),
 	Tx(BoxedTxBuilderFn<P>),
 	Bundle(types::Bundle<P>),
 }
 
 enum InputPayloadItem<P: PlatformWithRpcTypes> {
 	Barrier,
-	NamedBarrier(String),
+	TaggedBarrier(String),
 	Tx(types::TxEnvelope<P>),
 	Bundle(types::Bundle<P>),
 }

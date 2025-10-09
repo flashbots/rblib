@@ -116,7 +116,7 @@ impl<P: Platform> Checkpoint<P> {
 	/// - Multiple transactions if this checkpoint represents a bundle.
 	pub fn transactions(&self) -> &[Recovered<types::Transaction<P>>] {
 		match &self.inner.mutation {
-			Mutation::Barrier | Mutation::NamedBarrier(_) => &[],
+			Mutation::Barrier => &[],
 			Mutation::Executable(result) => result.transactions(),
 		}
 	}
@@ -125,7 +125,7 @@ impl<P: Platform> Checkpoint<P> {
 	/// checkpoint.
 	pub fn result(&self) -> Option<&ExecutionResult<P>> {
 		match &self.inner.mutation {
-			Mutation::Barrier | Mutation::NamedBarrier(_) => None,
+			Mutation::Barrier => None,
 			Mutation::Executable(result) => Some(result),
 		}
 	}
@@ -134,7 +134,7 @@ impl<P: Platform> Checkpoint<P> {
 	/// transaction(s) that created this checkpoint.
 	pub fn state(&self) -> Option<&BundleState> {
 		match self.inner.mutation {
-			Mutation::Barrier | Mutation::NamedBarrier(_) => None,
+			Mutation::Barrier => None,
 			Mutation::Executable(ref result) => Some(result.state()),
 		}
 	}
@@ -144,9 +144,35 @@ impl<P: Platform> Checkpoint<P> {
 		matches!(self.inner.mutation, Mutation::Barrier)
 	}
 
-	/// Returns true if this checkpoint is a named barrier checkpoint.
-	pub fn is_named_barrier(&self, name: &str) -> bool {
-		matches!(self.inner.mutation, Mutation::NamedBarrier(ref barrier_name) if barrier_name == name)
+	/// Returns true if this checkpoint has the given tag.
+	pub fn is_tagged(&self, tag: &str) -> bool {
+		self.tag().is_some_and(|t| t == tag)
+	}
+
+	/// Returns the tag of this checkpoint, if any.
+	pub fn tag(&self) -> Option<&str> {
+		self.inner.tag.as_deref()
+	}
+
+	/// Sets or clears the tag on this checkpoint.
+	/// Note: tags are metadata and do not affect state. Tags are not shared
+	/// across clones of the same checkpoint instance.
+	pub fn set_tag(&mut self, tag: Option<&str>) {
+		// Replace the inner pointer with a new one that carries the new tag.
+		// This keeps checkpoint state immutable while allowing tag metadata.
+		let prev = &self.inner;
+		let new_inner = CheckpointInner {
+			block: prev.block.clone(),
+			prev: prev.prev.clone(),
+			depth: prev.depth,
+			mutation: match &prev.mutation {
+				Mutation::Barrier => Mutation::Barrier,
+				Mutation::Executable(res) => Mutation::Executable(res.clone()),
+			},
+			created_at: prev.created_at,
+			tag: tag.map(|s| s.into()),
+		};
+		self.inner = Arc::new(new_inner);
 	}
 
 	/// If this checkpoint is created from a single transaction, returns a
@@ -212,22 +238,7 @@ impl<P: Platform> Checkpoint<P> {
 				depth: self.inner.depth + 1,
 				mutation,
 				created_at: Instant::now(),
-			}),
-		}
-	}
-
-	/// Creates a new checkpoint on top of the current checkpoint that introduces
-	/// a named barrier. This new checkpoint will be now considered the new
-	/// beginning of staging history.
-	#[must_use]
-	pub fn named_barrier(&self, name: impl Into<String>) -> Self {
-		Self {
-			inner: Arc::new(CheckpointInner {
-				block: self.inner.block.clone(),
-				prev: Some(Arc::clone(&self.inner)),
-				depth: self.inner.depth + 1,
-				mutation: Mutation::NamedBarrier(name.into()),
-				created_at: Instant::now(),
+				tag: None,
 			}),
 		}
 	}
@@ -244,6 +255,7 @@ impl<P: Platform> Checkpoint<P> {
 				depth: 0,
 				mutation: Mutation::Barrier,
 				created_at: Instant::now(),
+				tag: None,
 			}),
 		}
 	}
@@ -292,11 +304,6 @@ enum Mutation<P: Platform> {
 	/// the previous checkpoint. The executable item can be a single transaction
 	/// or a bundle of transactions.
 	Executable(ExecutionResult<P>),
-
-	/// A checkpoint that was created by applying a named barrier on top of the
-	/// previous checkpoint. The named barrier is used to indicate that any prior
-	/// checkpoints are immutable and should not be discarded or reordered.
-	NamedBarrier(String),
 }
 
 struct CheckpointInner<P: Platform> {
@@ -318,6 +325,10 @@ struct CheckpointInner<P: Platform> {
 
 	/// The timestamp when this checkpoint was created.
 	created_at: Instant,
+
+	/// Optional tag for this checkpoint. Tags are used to mark checkpoints
+	/// for later reference in history queries and display/debug output.
+	tag: Option<Box<str>>,
 }
 
 /// Converts a checkpoint into a vector of transactions that were applied to
@@ -460,6 +471,7 @@ impl<P: Platform> Debug for Checkpoint<P> {
 		f.debug_struct("Checkpoint")
 			.field("depth", &self.depth())
 			.field("block", &format!("{} + 1", self.block().parent().hash()))
+			.field("tag", &self.tag())
 			.field(
 				"txs",
 				&self
@@ -484,9 +496,12 @@ impl<P: Platform> Display for Checkpoint<P> {
 			// this is a barrier checkpoint, which has no transactions
 			// applied to it.
 			return match &self.inner.mutation {
-				Mutation::Barrier => write!(f, "[{}] barrier", self.depth()),
-				Mutation::NamedBarrier(name) => {
-					write!(f, "[{}] barrier '{}'", self.depth(), name)
+				Mutation::Barrier => {
+					if let Some(tag) = self.tag() {
+						write!(f, "[{}] barrier '{}'", self.depth(), tag)
+					} else {
+						write!(f, "[{}] barrier", self.depth())
+					}
 				}
 				Mutation::Executable(_) => {
 					unreachable!("Executable variant handled above")
@@ -495,25 +510,58 @@ impl<P: Platform> Display for Checkpoint<P> {
 		};
 
 		match exec_result.source() {
-			Executable::Transaction(tx) => write!(
-				f,
-				"[{}] tx {} ({}, {} gas)",
-				self.depth(),
-				tx.tx_hash(),
-				match exec_result.results()[0] {
-					types::TransactionExecutionResult::<P>::Success { .. } => "success",
-					types::TransactionExecutionResult::<P>::Revert { .. } => "revert",
-					types::TransactionExecutionResult::<P>::Halt { .. } => "halt",
-				},
-				self.gas_used(),
-			),
-			Executable::Bundle(bundle) => write!(
-				f,
-				"[{}] (bundle {} txs, {} gas)",
-				self.depth(),
-				bundle.transactions().len(),
-				self.gas_used(),
-			),
+			Executable::Transaction(tx) => {
+				if let Some(tag) = self.tag() {
+					write!(
+						f,
+						"[{}] tx {} ({}, {} gas) '{}'",
+						self.depth(),
+						tx.tx_hash(),
+						match exec_result.results()[0] {
+							types::TransactionExecutionResult::<P>::Success { .. } =>
+								"success",
+							types::TransactionExecutionResult::<P>::Revert { .. } => "revert",
+							types::TransactionExecutionResult::<P>::Halt { .. } => "halt",
+						},
+						self.gas_used(),
+						tag,
+					)
+				} else {
+					write!(
+						f,
+						"[{}] tx {} ({}, {} gas)",
+						self.depth(),
+						tx.tx_hash(),
+						match exec_result.results()[0] {
+							types::TransactionExecutionResult::<P>::Success { .. } =>
+								"success",
+							types::TransactionExecutionResult::<P>::Revert { .. } => "revert",
+							types::TransactionExecutionResult::<P>::Halt { .. } => "halt",
+						},
+						self.gas_used(),
+					)
+				}
+			}
+			Executable::Bundle(bundle) => {
+				if let Some(tag) = self.tag() {
+					write!(
+						f,
+						"[{}] (bundle {} txs, {} gas) '{}'",
+						self.depth(),
+						bundle.transactions().len(),
+						self.gas_used(),
+						tag,
+					)
+				} else {
+					write!(
+						f,
+						"[{}] (bundle {} txs, {} gas)",
+						self.depth(),
+						bundle.transactions().len(),
+						self.gas_used(),
+					)
+				}
+			}
 		}
 	}
 }
