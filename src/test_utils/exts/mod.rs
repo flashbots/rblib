@@ -36,11 +36,11 @@ where
 	B: BlockResponse<Transaction = T>,
 {
 	fn includes(&self, txs: impl IntoTxs) -> bool {
-		txs.into_txs().into_iter().all(|txhash| {
+		txs.into_txs().into_iter().all(|tx_hash| {
 			self
 				.transactions()
 				.txns()
-				.any(|included| included.tx_hash() == txhash)
+				.any(|included| included.tx_hash() == tx_hash)
 		})
 	}
 

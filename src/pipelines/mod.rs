@@ -149,7 +149,7 @@ impl<P: Platform> Pipeline<P> {
 
 /// Observability
 impl<P: Platform> Pipeline<P> {
-	/// Returns true if the pipieline has no steps, prologue or epilogue.
+	/// Returns true if the pipeline has no steps, prologue or epilogue.
 	pub fn is_empty(&self) -> bool {
 		self.prologue.is_none() && self.epilogue.is_none() && self.steps.is_empty()
 	}
@@ -220,7 +220,7 @@ impl<P: Platform> core::fmt::Debug for StepOrPipeline<P> {
 	}
 }
 
-/// This trait is used to enable various syntatic sugar for defining nested
+/// This trait is used to enable various syntactic sugar for defining nested
 /// pipelines
 pub trait IntoPipeline<P: Platform, Marker = ()> {
 	#[track_caller]

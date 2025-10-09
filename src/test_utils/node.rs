@@ -69,7 +69,7 @@ pub trait ConsensusDriver<P: PlatformWithRpcTypes>:
 	/// This is always called after a payload building process has successfully
 	/// started and a payload ID has been returned.
 	///
-	/// This should run the engine api CL <-> EL protocol to retreive the newly
+	/// This should run the engine api CL <-> EL protocol to retrieve the newly
 	/// built payload then set it as the canonical payload on the node.
 	fn finish_building(
 		&self,
@@ -265,14 +265,14 @@ where
 		&self.consensus
 	}
 
-	/// Triggers the building of a new block on this node with default paramters
+	/// Triggers the building of a new block on this node with default parameters
 	/// and returns the newly built block.
 	pub async fn next_block(&self) -> eyre::Result<types::BlockResponse<P>> {
 		self.next_block_with_params(C::Params::default()).await
 	}
 
 	/// Triggers the building of a new block on this node with user provided
-	/// paramters and returns the newly built block.
+	/// parameters and returns the newly built block.
 	pub async fn next_block_with_params(
 		&self,
 		params: C::Params,

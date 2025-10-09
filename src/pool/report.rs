@@ -12,7 +12,7 @@ use {
 };
 
 impl<P: Platform> OrderPool<P> {
-	/// Invoked when an order was proposed by the pool but it failed to create a
+	/// Invoked when an order was proposed by the pool, but it failed to create a
 	/// checkpoint because of an execution error.
 	///
 	/// Here we will need to decide whether the execution error permanently

@@ -10,8 +10,9 @@ use {
 /// pipeline.
 ///
 /// Notes:
-///  - In a pipeline with nested pipelines, the top-level pipline's event bus is
-///    responsible for handling all events of all contained pipelines and steps.
+///  - In a pipeline with nested pipelines, the top-level pipeline's event bus
+///    is responsible for handling all events of all contained pipelines and
+///    steps.
 #[derive(Default, Debug)]
 pub(super) struct EventsBus<P: Platform> {
 	publishers: DashMap<TypeId, Sender<Arc<dyn Any + Send + Sync>>>,

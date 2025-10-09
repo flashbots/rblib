@@ -61,7 +61,7 @@ use {
 /// `PipelineExecutor::advance_cursor`.
 ///
 /// Scopes manage:
-/// 	- The metrics name for each pipeline and its nested pipelines
+///   - The metrics name for each pipeline and its nested pipelines
 ///   - Limits calculation and renewal for pipeline steps.
 pub(crate) struct RootScope<P: Platform> {
 	root: RwLock<Scope<P>>,

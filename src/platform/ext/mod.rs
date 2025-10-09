@@ -1,4 +1,4 @@
-//! Extention traits and utilities that improve the developer experience when
+//! Extension traits and utilities that improve the developer experience when
 //! working platform-agnostic code.
 
 use {

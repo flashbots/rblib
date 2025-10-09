@@ -128,7 +128,7 @@ impl<P: Platform> StepInstance<P> {
 					// `PipelineServiceBuilder::spawn_payload_builder_service` for a
 					// given instance of a `Pipeline<P>`. The service builder owns the
 					// pipeline instance and is guaranteed to be the only one calling
-					// the setup function. Also `setup` is a synchronous function.
+					// the setup function. Also, `setup` is a synchronous function.
 					#[expect(invalid_reference_casting)]
 					let step = unsafe {
 						let ptr = core::ptr::from_ref(step);

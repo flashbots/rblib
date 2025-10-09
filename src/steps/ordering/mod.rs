@@ -53,7 +53,7 @@ impl<P: Platform, S: OrderScore<P>> Step<P> for OrderBy<P, S> {
 		let ordered = match SortedOrders::<P, S>::try_from(&history) {
 			Ok(ordered) => ordered.into_iter(),
 			// when the step started running, the payload had no nonce conflicts and
-			// all orders were able to construct valid checkpoints. After reordering
+			// all orders were able to construct valid checkpoints. After reordering,
 			// we should not have any nonce conflicts. This error might happen only
 			// when the scoring function fails to compute the score for some
 			// checkpoint.
@@ -76,7 +76,7 @@ impl<P: Platform, S: OrderScore<P>> Step<P> for OrderBy<P, S> {
 		let mut ordered_prefix = history
 			.at(first_out_of_order)
 			.cloned()
-			.expect("must be an valid index");
+			.expect("must be a valid index");
 
 		for item in ordered.skip(first_out_of_order) {
 			ordered_prefix = match ordered_prefix.apply(item) {
@@ -106,7 +106,7 @@ struct SortedOrders<'a, P: Platform, S: OrderScore<P>> {
 	/// a map of all orders, sorted by their score.
 	by_score: BTreeMap<S::Score, BTreeSet<B256>>,
 
-	/// A map of all signers the the nonces they have used in sorted order.
+	/// A map of all signers to the nonces they have used in sorted order.
 	nonces: HashMap<Address, BTreeSet<u64>>,
 
 	/// A map of all checkpoints, keyed by their hash.

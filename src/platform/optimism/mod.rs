@@ -155,9 +155,9 @@ impl PlatformWithRpcTypes for Optimism {
 /// Payload builders might want to explicitly add those transactions during
 /// the progressive payload building process to have visibility into the
 /// state changes they cause and to know the cumulative gas usage including
-/// those txs. This happens for example when a pipeline has a the
-/// `OptimismPrologue` step that applies the sequencer transactions to the
-/// payload before any other step.
+/// those txs. This happens for example when a pipeline has a `OptimismPrologue`
+/// step that applies the sequencer transactions to the payload before any other
+/// step.
 fn extract_external_txs<P>(
 	payload: &Checkpoint<P>,
 ) -> Vec<Recovered<types::Transaction<Optimism>>>

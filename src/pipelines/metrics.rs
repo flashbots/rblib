@@ -51,7 +51,7 @@ pub(super) struct Payload {
 	pub fees_total: Counter,
 
 	/// The time given by the EL for the payload job to complete.
-	/// This can be also interpretted as the block time.
+	/// This can be also interpreted as the block time.
 	pub job_deadline: Gauge,
 
 	/// The latest block number produced by the payload builder.

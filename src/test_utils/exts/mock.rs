@@ -87,7 +87,7 @@ impl<P: Platform> PayloadBuilderAttributesMocked<P>
 }
 
 /// Allows the creation of a block context for the first block post genesis with
-/// a all [`FundedAccounts`] pre-funded with 100 ETH.
+/// all [`FundedAccounts`] pre-funded with 100 ETH.
 pub trait BlockContextMocked<P: Platform, Marker = ()> {
 	/// Returns a tuple of:
 	/// 1. an instance of a [`BlockContext`] that is rooted at the genesis block

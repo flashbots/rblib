@@ -91,11 +91,11 @@ impl<P: Platform> OrderPool<P> {
 			// keep track of all orders that contain this transaction.
 			// When this transaction ends up in a produced payload, all orders
 			// containing it will be invalidated and removed from the pool.
-			let txhash = *tx.tx_hash();
+			let tx_hash = *tx.tx_hash();
 			self
 				.inner
-				.txmap
-				.entry(txhash)
+				.tx_map
+				.entry(tx_hash)
 				.or_default()
 				.insert(order_hash);
 		}
@@ -110,10 +110,10 @@ impl<P: Platform> OrderPool<P> {
 		self.inner.host.remove_transaction(*order_hash);
 	}
 
-	/// Removes all orders that contain the a specific transaction hash.
-	pub fn remove_any_with(&self, txhash: TxHash) {
-		self.inner.host.remove_transaction(txhash);
-		if let Some((_, orders)) = self.inner.txmap.remove(&txhash) {
+	/// Removes all orders that contain a specific transaction hash.
+	pub fn remove_any_with(&self, tx_hash: TxHash) {
+		self.inner.host.remove_transaction(tx_hash);
+		if let Some((_, orders)) = self.inner.tx_map.remove(&tx_hash) {
 			for order_hash in orders {
 				self.remove(&order_hash);
 			}
@@ -162,7 +162,7 @@ struct OrderPoolInner<P: Platform> {
 
 	/// A map that keeps track of transaction hashes and orders that contain
 	/// them.
-	txmap: DashMap<TxHash, DashSet<B256>>,
+	tx_map: DashMap<TxHash, DashSet<B256>>,
 
 	/// The host Reth node that this order pool is attached to.
 	/// Attachment is done by the `attach_pool` method during node components

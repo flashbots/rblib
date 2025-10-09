@@ -39,7 +39,7 @@ impl<P: Platform> StepContext<P> {
 		}
 	}
 
-	/// Access to the state of the chain at the begining of block that we are
+	/// Access to the state of the chain at the beginning of block that we are
 	/// building. This state does not include any changes made by the pipeline
 	/// during the payload building process. It does however include changes
 	/// applied by platform-specific [`BlockBuilder::apply_pre_execution_changes`]

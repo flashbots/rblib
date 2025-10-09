@@ -421,7 +421,7 @@ mod tests {
 
 		// The transaction with the lowest priority fee actually generates the most
 		// profit for the coinbase account and should be first in the
-		// ordering, the reamining two should be ordered by their priority fee.
+		// ordering, the remaining two should be ordered by their priority fee.
 		assert_eq!(txs.len(), 3);
 		assert_eq!(txs[0].signer(), FundedAccounts::address(2));
 		assert_eq!(txs[1].signer(), FundedAccounts::address(1));

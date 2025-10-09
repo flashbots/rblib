@@ -44,7 +44,7 @@ pub struct AppendOrders<P: Platform> {
 	attempted: DashSet<B256>,
 
 	/// When enabled, this step will also pull orders from the system transaction
-	/// pool that is running within the Reth node. By default this is enabled.
+	/// pool that is running within the Reth node. By default, this is enabled.
 	enable_system_pool: bool,
 
 	/// Specifies the maximum number of new orders that will be added to the
@@ -60,7 +60,7 @@ pub struct AppendOrders<P: Platform> {
 	max_new_transactions: Option<usize>,
 
 	/// Specifies whether this step should return `ControlFlow::Ok` or
-	/// `ControlFlow::Break` when limits are reached and we were not able to add
+	/// `ControlFlow::Break` when limits are reached, and we were not able to add
 	/// new transactions in this run of the step.
 	///
 	/// This option is meaningful when this step is used in `Loop`s.
@@ -73,7 +73,7 @@ pub struct AppendOrders<P: Platform> {
 
 /// Construction
 impl<P: Platform> AppendOrders<P> {
-	/// Attaches this step a an `OrderPool` that supports bundles.
+	/// Attaches this step from an `OrderPool` that supports bundles.
 	pub fn from_pool(pool: &OrderPool<P>) -> Self {
 		Self {
 			order_pool: pool.clone(),
@@ -432,8 +432,8 @@ pub struct OrderInclusionAttempt(pub B256, pub PayloadId);
 #[derive(Debug, Clone)]
 pub struct OrderInclusionSuccess(pub B256, pub PayloadId);
 
-/// Event emitted when an order was proposed by the pool but it failed to create
-/// a valid checkpoint.
+/// Event emitted when an order was proposed by the pool, but it failed to
+/// create a valid checkpoint.
 #[derive(Debug, Clone)]
 pub struct OrderInclusionFailure<P: Platform>(
 	pub B256,

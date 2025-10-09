@@ -81,7 +81,7 @@ fn short_type_name(full_name: &str) -> String {
 		// parameters) separated by the characters that we try to find below.
 		// Then, each individual typename is shortened to its last path component.
 		//
-		// Note: Instead of `find`, `split_inclusive` would be nice but it's still
+		// Note: Instead of `find`, `split_inclusive` would be nice, but it's still
 		// unstable...
 		let mut remainder = full_name;
 		while let Some(index) =

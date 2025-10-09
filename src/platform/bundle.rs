@@ -208,8 +208,8 @@ impl<P: Platform> FlashbotsBundle<P> {
 		tx: Recovered<types::Transaction<P>>,
 	) -> Self {
 		if !self.recovered.iter().any(|t| t.tx_hash() == tx.tx_hash()) {
-			let txbytes = tx.encoded_2718();
-			self.inner.txs.push(txbytes.into());
+			let tx_bytes = tx.encoded_2718();
+			self.inner.txs.push(tx_bytes.into());
 			self.recovered.push(tx);
 		}
 		self

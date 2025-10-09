@@ -108,9 +108,9 @@ impl<P: Platform> HostNode<P> {
 
 	/// If attached to a host node, this will remove a transaction from the reth
 	/// native transaction pool.
-	pub(super) fn remove_transaction(&self, txhash: TxHash) {
+	pub(super) fn remove_transaction(&self, tx_hash: TxHash) {
 		if let Some(pool) = self.instances.get().map(|i| &i.system_pool) {
-			pool.remove_transactions(vec![txhash]);
+			pool.remove_transactions(vec![tx_hash]);
 		}
 	}
 }

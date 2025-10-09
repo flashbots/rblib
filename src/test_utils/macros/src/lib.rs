@@ -55,7 +55,7 @@ pub fn rblib_test(args: TokenStream, input: TokenStream) -> TokenStream {
 	// Generate test functions for each platform
 	let test_functions = platform_list.platforms.iter().map(|platform| {
 		let platform_lowercase = platform.to_string().to_lowercase();
-		let test_fn_name = syn::Ident::new(
+		let test_fn_name = Ident::new(
 			&format!("{original_fn_name}_{platform_lowercase}"),
 			original_fn_name.span(),
 		);

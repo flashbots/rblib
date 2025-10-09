@@ -22,7 +22,7 @@ use {
 
 /// This type is the bridge between Reth's payload builder API and the
 /// pipelines API. It will take a pipeline instance and turn it into what
-/// eventually becomes a Paylod Job Generator. They payload Job Generator
+/// eventually becomes a Payload Job Generator. The payload Job Generator
 /// will be responsible for creating new [`PayloadJob`] instances
 /// whenever a new payload request comes in from the CL Node.
 pub(super) struct PipelineServiceBuilder<P: Platform> {
@@ -133,8 +133,8 @@ where
 }
 
 /// This type is stored inside the [`PayloadBuilderService`] type in Reth.
-/// There's one instance of this type per node and it is instantiated during the
-/// node startup inside `spawn_payload_builder_service`.
+/// There's one instance of this type per node, and it is instantiated during
+/// the node startup inside `spawn_payload_builder_service`.
 ///
 /// The responsibility of this type is to respond to new payload requests when
 /// FCU calls come from the CL Node. Each FCU call will generate a new

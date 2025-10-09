@@ -33,7 +33,7 @@ type PipelineOutput<P: Platform> =
 
 /// This type is responsible for executing a single run of a pipeline.
 ///
-/// It's execution is driven by the future poll that it implements. Each call to
+/// The execution is driven by the future poll that it implements. Each call to
 /// `poll` will run one step of the pipeline at a time, or parts of a step if
 /// the step is async and needs many polls before it completes. The executor
 /// future will resolve when the whole pipeline has been executed, or when an
@@ -123,7 +123,7 @@ impl<P: Platform, Provider: traits::ProviderBounds<P>>
 impl<P: Platform, Provider: traits::ProviderBounds<P>>
 	PipelineExecutor<P, Provider>
 {
-	/// This method creates a future that encapsulates the execution an an async
+	/// This method creates a future that encapsulates the execution as an async
 	/// step. The created future will be held inside `Cursor::StepInProgress` and
 	/// polled until it resolves.
 	///
@@ -243,7 +243,7 @@ impl<P: Platform, Provider: traits::ProviderBounds<P>>
 
 		async move {
 			// invoke the `after_job` method of each step in the pipeline
-			// if any of them failes we fail the pipeline execution, othwerwise
+			// if any of them fails, we fail the pipeline execution, otherwise
 			// we return the output of the pipeline.
 			for step in pipeline.iter_steps() {
 				let navi = step.navigator(&pipeline).expect(
@@ -279,7 +279,7 @@ where
 	fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
 		let executor = self.get_mut();
 
-		// The executor has not ran any steps yet, it is invoking the `before_job`
+		// The executor has not run any steps yet, it is invoking the `before_job`
 		// method of each step in the pipeline.
 		if let Cursor::Initializing(ref mut future) = executor.cursor {
 			if let Poll::Ready(output) = future.as_mut().poll_unpin(cx) {
@@ -404,7 +404,7 @@ enum Cursor<P: Platform> {
 
 	/// The pipeline is currently initializing all steps for a new payload job.
 	///
-	/// This happens once before any step is executed and it calls the
+	/// This happens once before any step is executed, and it calls the
 	/// `before_job` method of each step in the pipeline.
 	Initializing(
 		Pin<
@@ -419,8 +419,8 @@ enum Cursor<P: Platform> {
 	Finalizing(Pin<Box<dyn Future<Output = PipelineOutput<P>> + Send>>),
 
 	/// The pipeline is currently preparing to execute the next step.
-	/// We are in this state only for a brief moment inside the `poll` method
-	/// and it will never be seen by the `run_step` method.
+	/// We are in this state only for a brief moment inside the `poll` method, and
+	/// it will never be seen by the `run_step` method.
 	PreparingStep,
 }
 

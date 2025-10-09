@@ -21,7 +21,7 @@ pub trait ScopedLimits<P: Platform>: Send + Sync + 'static {
 	fn create(&self, payload: &Checkpoint<P>, enclosing: &Limits) -> Limits;
 }
 
-/// Convinience trait that allows API users to either use a `ScopedLimits` type
+/// Convenience trait that allows API users to either use a `ScopedLimits` type
 /// or a concrete limits value in [`Pipeline::with_limits`].
 pub trait IntoScopedLimits<P: Platform, Marker = ()> {
 	/// Convert the type into a limits factory.
@@ -105,35 +105,7 @@ impl<T> From<Zero> for ScaleOp<T> {
 
 impl<P: Platform> ScopedLimits<P> for Scaled {
 	fn create(&self, _: &Checkpoint<P>, enclosing: &Limits) -> Limits {
-		let mut limits = *enclosing;
-
-		if let Some(ref op) = self.gas {
-			limits.gas_limit = op.apply(limits.gas_limit);
-		}
-
-		if let Some(ref op) = self.deadline {
-			limits.deadline = op.apply(limits.deadline);
-		}
-
-		if let Some(ref op) = self.max_txs {
-			limits.max_transactions = op.apply(limits.max_transactions);
-		}
-
-		if let Some(ref op) = self.max_blob_count {
-			limits.blob_params = limits.blob_params.map(|params| BlobParams {
-				max_blob_count: op.apply(params.max_blob_count),
-				..params
-			});
-		}
-
-		if let Some(ref op) = self.max_blobs_per_tx {
-			limits.blob_params = limits.blob_params.map(|params| BlobParams {
-				max_blobs_per_tx: op.apply(params.max_blobs_per_tx),
-				..params
-			});
-		}
-
-		limits
+		self.from(enclosing)
 	}
 }
 

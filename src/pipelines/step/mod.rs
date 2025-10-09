@@ -30,7 +30,7 @@ pub use {context::StepContext, reth::payload::builder::PayloadBuilderError};
 /// can be generic over the platform they run on or specialized for a specific
 /// platform.
 ///
-/// The instance of the step is long-lived and it's lifetime is equal to the
+/// The instance of the step is long-lived, and it's lifetime is equal to the
 /// lifetime of the pipeline it is part of. All invocations of the step will
 /// repeatedly call into the `step` async function on the same instance.
 ///

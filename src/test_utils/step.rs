@@ -420,7 +420,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn break_is_recorded() {
-		let step = OneStep::<crate::platform::Ethereum>::new(AlwaysBreakStep)
+		let step = OneStep::<Ethereum>::new(AlwaysBreakStep)
 			.run()
 			.await
 			.unwrap();
@@ -429,16 +429,13 @@ mod tests {
 
 	#[tokio::test]
 	async fn ok_is_recorded() {
-		let step = OneStep::<crate::platform::Ethereum>::new(AlwaysOkStep)
-			.run()
-			.await
-			.unwrap();
+		let step = OneStep::<Ethereum>::new(AlwaysOkStep).run().await.unwrap();
 		assert!(matches!(step, ControlFlow::Ok(_)));
 	}
 
 	#[tokio::test]
 	async fn fail_is_recorded() {
-		let step = OneStep::<crate::platform::Ethereum>::new(AlwaysFailStep)
+		let step = OneStep::<Ethereum>::new(AlwaysFailStep)
 			.run()
 			.await
 			.unwrap();

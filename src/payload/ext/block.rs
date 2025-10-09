@@ -35,7 +35,7 @@ pub trait BlockExt<P: Platform>: super::sealed::Sealed {
 	/// Address of the fees recipient for the block.
 	fn coinbase(&self) -> Address;
 
-	/// Returns the balance of the given address at the begining of the block
+	/// Returns the balance of the given address at the beginning of the block
 	/// before any transactions are executed.
 	fn balance_of(&self, address: Address) -> ProviderResult<U256>;
 }
@@ -101,7 +101,7 @@ impl<P: Platform> BlockExt<P> for BlockContext<P> {
 		self.attributes().suggested_fee_recipient()
 	}
 
-	/// Returns the balance of the given address at the begining of the block
+	/// Returns the balance of the given address at the beginning of the block
 	/// before any transactions are executed.
 	fn balance_of(&self, address: Address) -> ProviderResult<U256> {
 		self

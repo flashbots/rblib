@@ -1,7 +1,7 @@
 //! Platform abstraction layer
 //!
-//! This module fines the platform specific extension points for the undelying
-//! node that executes pipelines. By default rblib provides implementations of
+//! This module fines the platform specific extension points for the underlying
+//! node that executes pipelines. By default, rblib provides implementations of
 //! the standard Ethereum and Optimism platforms, but it can be extended to
 //! support other platforms as well.
 
@@ -31,7 +31,7 @@ mod optimism;
 #[cfg(feature = "optimism")]
 pub use optimism::*;
 
-/// This type abstracts the platform specific types of the undelying node that
+/// This type abstracts the platform specific types of the underlying node that
 /// is building block payloads.
 ///
 /// The payload builder API is agnostic to the underlying payload types, header
@@ -113,7 +113,7 @@ pub trait Platform:
 		Provider: traits::ProviderBounds<Self>;
 }
 
-/// This is an optional extention trait for platforms that want to provide info
+/// This is an optional extension trait for platforms that want to provide info
 /// about their RPC types. Implementing this trait for a platform makes it
 /// usable with all `alloy` utilities such as transaction builders, signers, rpc
 /// clients, etc.

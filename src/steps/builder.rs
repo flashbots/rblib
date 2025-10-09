@@ -196,7 +196,7 @@ mod tests {
 		assert_eq!(builder_tx.value(), U256::ZERO);
 	}
 
-	/// Ensure that the builder epilogue step correctly retreives the current
+	/// Ensure that the builder epilogue step correctly retrieves the current
 	/// nonce of the signer. In this test we will have a payload with existing
 	/// transactions signed by the same signer, and the builder epilogue should
 	/// use the next nonce.
