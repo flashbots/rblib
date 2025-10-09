@@ -11,7 +11,7 @@ jobs:
     name: Rustfmt
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v5
       - name: Cache Rust toolchain
         uses: actions/cache@v3
         with:
@@ -34,7 +34,7 @@ jobs:
     name: Clippy
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v5
       - name: Cache Rust toolchain
         uses: actions/cache@v3
         with:
@@ -53,11 +53,22 @@ jobs:
       - name: Run Clippy with stable
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+  typos:
+    name: Typos
+    runs-on: warp-ubuntu-latest-x64-32x
+    if: ${{ github.event_name == 'pull_request' }}
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: crate-ci/typos@v1
+
   test:
     name: Tests
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v5
       - name: Cache Rust toolchain
         uses: actions/cache@v3
         with:
