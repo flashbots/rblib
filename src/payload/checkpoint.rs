@@ -480,6 +480,11 @@ impl<P: Platform> Debug for Checkpoint<P> {
 
 impl<P: Platform> Display for Checkpoint<P> {
 	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		let tag_suffix = self
+			.tag()
+			.map(|tag| format!(" '{tag}'"))
+			.unwrap_or_default();
+
 		let Mutation::Executable(exec_result) = &self.inner.mutation else {
 			if self.depth() == 0 {
 				// this is the initial checkpoint
@@ -490,11 +495,7 @@ impl<P: Platform> Display for Checkpoint<P> {
 			// applied to it.
 			return match &self.inner.mutation {
 				Mutation::Barrier => {
-					if let Some(tag) = self.tag() {
-						write!(f, "[{}] barrier '{}'", self.depth(), tag)
-					} else {
-						write!(f, "[{}] barrier", self.depth())
-					}
+					write!(f, "[{}] barrier{}", self.depth(), tag_suffix)
 				}
 				Mutation::Executable(_) => {
 					unreachable!("Executable variant handled above")
@@ -503,58 +504,27 @@ impl<P: Platform> Display for Checkpoint<P> {
 		};
 
 		match exec_result.source() {
-			Executable::Transaction(tx) => {
-				if let Some(tag) = self.tag() {
-					write!(
-						f,
-						"[{}] tx {} ({}, {} gas) '{}'",
-						self.depth(),
-						tx.tx_hash(),
-						match exec_result.results()[0] {
-							types::TransactionExecutionResult::<P>::Success { .. } =>
-								"success",
-							types::TransactionExecutionResult::<P>::Revert { .. } => "revert",
-							types::TransactionExecutionResult::<P>::Halt { .. } => "halt",
-						},
-						self.gas_used(),
-						tag,
-					)
-				} else {
-					write!(
-						f,
-						"[{}] tx {} ({}, {} gas)",
-						self.depth(),
-						tx.tx_hash(),
-						match exec_result.results()[0] {
-							types::TransactionExecutionResult::<P>::Success { .. } =>
-								"success",
-							types::TransactionExecutionResult::<P>::Revert { .. } => "revert",
-							types::TransactionExecutionResult::<P>::Halt { .. } => "halt",
-						},
-						self.gas_used(),
-					)
-				}
-			}
-			Executable::Bundle(bundle) => {
-				if let Some(tag) = self.tag() {
-					write!(
-						f,
-						"[{}] (bundle {} txs, {} gas) '{}'",
-						self.depth(),
-						bundle.transactions().len(),
-						self.gas_used(),
-						tag,
-					)
-				} else {
-					write!(
-						f,
-						"[{}] (bundle {} txs, {} gas)",
-						self.depth(),
-						bundle.transactions().len(),
-						self.gas_used(),
-					)
-				}
-			}
+			Executable::Transaction(tx) => write!(
+				f,
+				"[{}] tx {} ({}, {} gas){}",
+				self.depth(),
+				tx.tx_hash(),
+				match exec_result.results()[0] {
+					types::TransactionExecutionResult::<P>::Success { .. } => "success",
+					types::TransactionExecutionResult::<P>::Revert { .. } => "revert",
+					types::TransactionExecutionResult::<P>::Halt { .. } => "halt",
+				},
+				self.gas_used(),
+				tag_suffix,
+			),
+			Executable::Bundle(bundle) => write!(
+				f,
+				"[{}] (bundle {} txs, {} gas){}",
+				self.depth(),
+				bundle.transactions().len(),
+				self.gas_used(),
+				tag_suffix,
+			),
 		}
 	}
 }
