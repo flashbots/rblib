@@ -181,3 +181,72 @@ impl<P: Platform> Display for Span<P> {
 		)
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use crate::{
+		payload::Span,
+		prelude::{BlockContext, Checkpoint, Ethereum},
+		test_utils::BlockContextMocked,
+	};
+
+	#[test]
+	fn span_between_linear_history() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+
+		let checkpoint = block.start();
+		let c1: Checkpoint<Ethereum> = checkpoint.barrier();
+		let c2: Checkpoint<Ethereum> = c1.barrier();
+
+		// Direct ancestor-descendant pair
+		let span = Span::<Ethereum>::between(&checkpoint, &c2).unwrap();
+		assert_eq!(span.len(), 3);
+		assert_eq!(span.first().unwrap(), &checkpoint);
+		assert_eq!(span.len(), 2);
+		assert_eq!(span.last().unwrap(), &c2);
+	}
+
+	#[test]
+	fn test_empty_span() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+
+		let checkpoint = block.start();
+
+		let span = Span::<Ethereum>::between(&checkpoint, &checkpoint).unwrap();
+
+		assert_eq!(span.len(), 1);
+	}
+
+	#[test]
+	fn test_between_nonlinear_history() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+
+		let checkpoint1 = block.start();
+		let checkpoint2 = block.start();
+
+		let result = Span::between(&checkpoint1, &checkpoint2);
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn into_iter_and_iterators_work() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+
+		let root = block.start();
+		let c1: Checkpoint<Ethereum> = root.barrier();
+		let c2: Checkpoint<Ethereum> = c1.barrier();
+
+		let span = Span::<Ethereum>::between(&root, &c2).unwrap();
+
+		// iter()
+		let ids_from_iter: Vec<_> = span.iter().map(|c| c.to_owned()).collect();
+		assert_eq!(ids_from_iter.len(), 3);
+		assert_eq!(ids_from_iter[0], root);
+		assert_eq!(ids_from_iter[2], c2);
+
+		// into_iter()
+		let ids_from_into_iter: Vec<_> =
+			span.clone().into_iter().map(|c| c).collect();
+		assert_eq!(ids_from_iter, ids_from_into_iter);
+	}
+}
