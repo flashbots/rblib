@@ -70,6 +70,11 @@ pub enum Error<P: Platform> {
 ///    payload is being built.
 pub struct Checkpoint<P: Platform> {
 	inner: Arc<CheckpointInner<P>>,
+
+	/// Optional tag for this checkpoint instance. Tags are metadata used to
+	/// mark checkpoints for later reference in history queries and display/debug
+	/// output.
+	tag: Option<Arc<str>>,
 }
 
 /// Public read API
@@ -98,6 +103,7 @@ impl<P: Platform> Checkpoint<P> {
 	pub fn prev(&self) -> Option<Checkpoint<P>> {
 		self.inner.prev.as_ref().map(|prev| Checkpoint {
 			inner: Arc::clone(prev),
+			tag: None,
 		})
 	}
 
@@ -151,28 +157,17 @@ impl<P: Platform> Checkpoint<P> {
 
 	/// Returns the tag of this checkpoint, if any.
 	pub fn tag(&self) -> Option<&str> {
-		self.inner.tag.as_deref()
+		self.tag.as_deref()
 	}
 
-	/// Sets or clears the tag on this checkpoint.
-	/// Note: tags are metadata and do not affect state. Tags are not shared
-	/// across clones of the same checkpoint instance.
+	/// Sets this checkpoint's tag metadata (pass `None` to remove it).
 	pub fn set_tag(&mut self, tag: Option<&str>) {
-		// Replace the inner pointer with a new one that carries the new tag.
-		// This keeps checkpoint state immutable while allowing tag metadata.
-		let prev = &self.inner;
-		let new_inner = CheckpointInner {
-			block: prev.block.clone(),
-			prev: prev.prev.clone(),
-			depth: prev.depth,
-			mutation: match &prev.mutation {
-				Mutation::Barrier => Mutation::Barrier,
-				Mutation::Executable(res) => Mutation::Executable(res.clone()),
-			},
-			created_at: prev.created_at,
-			tag: tag.map(|s| s.into()),
-		};
-		self.inner = Arc::new(new_inner);
+		self.tag = tag.map(|s| s.into());
+	}
+
+	/// Clears any tag set on this checkpoint instance.
+	pub fn clear_tag(&mut self) {
+		self.tag = None;
 	}
 
 	/// If this checkpoint is created from a single transaction, returns a
@@ -238,8 +233,8 @@ impl<P: Platform> Checkpoint<P> {
 				depth: self.inner.depth + 1,
 				mutation,
 				created_at: Instant::now(),
-				tag: None,
 			}),
+			tag: None,
 		}
 	}
 
@@ -255,8 +250,8 @@ impl<P: Platform> Checkpoint<P> {
 				depth: 0,
 				mutation: Mutation::Barrier,
 				created_at: Instant::now(),
-				tag: None,
 			}),
+			tag: None,
 		}
 	}
 
@@ -277,6 +272,7 @@ impl<P: Platform> IntoIterator for &Checkpoint<P> {
 		std::iter::successors(Some(self.clone()), |cp| {
 			cp.inner.prev.as_ref().map(|prev| Checkpoint {
 				inner: Arc::clone(prev),
+				tag: None,
 			})
 		})
 	}
@@ -325,10 +321,6 @@ struct CheckpointInner<P: Platform> {
 
 	/// The timestamp when this checkpoint was created.
 	created_at: Instant,
-
-	/// Optional tag for this checkpoint. Tags are used to mark checkpoints
-	/// for later reference in history queries and display/debug output.
-	tag: Option<Box<str>>,
 }
 
 /// Converts a checkpoint into a vector of transactions that were applied to
@@ -455,6 +447,7 @@ impl<P: Platform> Clone for Checkpoint<P> {
 	fn clone(&self) -> Self {
 		Self {
 			inner: Arc::clone(&self.inner),
+			tag: self.tag.clone(),
 		}
 	}
 }
