@@ -179,12 +179,12 @@ impl Bundle<CustomPlatform> for CustomBundleType {
 		Eligibility::Eligible
 	}
 
-	fn is_allowed_to_fail(&self, tx: alloy::primitives::TxHash) -> bool {
-		self.reverting_txs.contains(&tx)
+	fn is_allowed_to_fail(&self, tx: &alloy::primitives::TxHash) -> bool {
+		self.reverting_txs.contains(tx)
 	}
 
-	fn is_optional(&self, tx: alloy::primitives::TxHash) -> bool {
-		self.dropping_txs.contains(&tx)
+	fn is_optional(&self, tx: &alloy::primitives::TxHash) -> bool {
+		self.dropping_txs.contains(tx)
 	}
 
 	fn validate_post_execution(

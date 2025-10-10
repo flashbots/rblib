@@ -132,7 +132,7 @@ impl<P: Platform> Step<P> for RemoveRevertedTransactions {
 						.failed_txs()
 						.filter_map(|(tx, result)| {
 							bundle
-								.is_optional(*tx.tx_hash())
+								.is_optional(tx.tx_hash())
 								.then_some((*tx.tx_hash(), result.gas_used()))
 						})
 						.collect::<Vec<_>>();
@@ -241,7 +241,7 @@ fn has_failures<P: Platform>(checkpoint: &Checkpoint<P>) -> bool {
 			.iter()
 			.map(|r| !r.is_success())
 			.zip(result.transactions().iter().map(|tx| tx.tx_hash()))
-			.any(|(is_failure, tx_hash)| is_failure && bundle.is_optional(*tx_hash));
+			.any(|(is_failure, tx_hash)| is_failure && bundle.is_optional(tx_hash));
 	}
 
 	false

@@ -205,7 +205,7 @@ impl<P: Platform> Executable<P> {
 		let mut results = Vec::with_capacity(bundle.transactions().len());
 
 		for transaction in bundle.transactions() {
-			let tx_hash = *transaction.tx_hash();
+			let tx_hash = transaction.tx_hash();
 			let optional = bundle.is_optional(tx_hash);
 			let allowed_to_fail = bundle.is_allowed_to_fail(tx_hash);
 
@@ -224,16 +224,16 @@ impl<P: Platform> Executable<P> {
 				// Optional failing transaction, not allowed to fail
 				// or optional invalid transaction: discard it
 				Ok(_) | Err(_) if optional => {
-					discarded.push(tx_hash);
+					discarded.push(*tx_hash);
 				}
 				// Non-Optional failing transaction, not allowed to fail: invalidate the
 				// bundle
 				Ok(_) => {
-					return Err(ExecutionError::BundleTransactionReverted(tx_hash));
+					return Err(ExecutionError::BundleTransactionReverted(*tx_hash));
 				}
 				// Non-Optional invalid transaction: invalidate the bundle
 				Err(err) => {
-					return Err(ExecutionError::InvalidBundleTransaction(tx_hash, err));
+					return Err(ExecutionError::InvalidBundleTransaction(*tx_hash, err));
 				}
 			}
 		}

@@ -38,7 +38,7 @@ impl<P: Platform, T: Bundle<P>> BundleExt<P> for T {
 		self
 			.transactions()
 			.iter()
-			.filter(|tx| !self.is_allowed_to_fail(*tx.tx_hash()))
+			.filter(|tx| !self.is_allowed_to_fail(tx.tx_hash()))
 	}
 
 	/// Returns an iterator over all transactions that can be removed from the
@@ -49,7 +49,7 @@ impl<P: Platform, T: Bundle<P>> BundleExt<P> for T {
 		self
 			.transactions()
 			.iter()
-			.filter(|tx| self.is_optional(*tx.tx_hash()))
+			.filter(|tx| self.is_optional(tx.tx_hash()))
 	}
 
 	/// Returns an iterator over all transactions that are required to be present
@@ -61,7 +61,7 @@ impl<P: Platform, T: Bundle<P>> BundleExt<P> for T {
 		self
 			.transactions()
 			.iter()
-			.filter(|tx| !self.is_optional(*tx.tx_hash()))
+			.filter(|tx| !self.is_optional(tx.tx_hash()))
 	}
 
 	/// Returns an iterator over all transactions that must be included and may
@@ -70,8 +70,7 @@ impl<P: Platform, T: Bundle<P>> BundleExt<P> for T {
 		&self,
 	) -> impl Iterator<Item = &Recovered<types::Transaction<P>>> {
 		self.transactions().iter().filter(|tx| {
-			!self.is_allowed_to_fail(*tx.tx_hash())
-				&& !self.is_optional(*tx.tx_hash())
+			!self.is_allowed_to_fail(tx.tx_hash()) && !self.is_optional(tx.tx_hash())
 		})
 	}
 }

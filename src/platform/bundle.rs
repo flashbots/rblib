@@ -77,11 +77,11 @@ pub trait Bundle<P: Platform>:
 	///
 	/// The `tx` is the hash of the transaction to check, that should be part of
 	/// this bundle.
-	fn is_allowed_to_fail(&self, tx: TxHash) -> bool;
+	fn is_allowed_to_fail(&self, tx: &TxHash) -> bool;
 
 	/// Checks if a transaction with the given hash may be removed from the
 	/// bundle without affecting its validity.
-	fn is_optional(&self, tx: TxHash) -> bool;
+	fn is_optional(&self, tx: &TxHash) -> bool;
 
 	/// An optional check for bundle implementations that have validity
 	/// requirements on the resulting state.
@@ -300,12 +300,12 @@ impl<P: Platform> Bundle<P> for FlashbotsBundle<P> {
 		)
 	}
 
-	fn is_allowed_to_fail(&self, tx: TxHash) -> bool {
-		self.reverting_tx_hashes.contains(&tx)
+	fn is_allowed_to_fail(&self, tx: &TxHash) -> bool {
+		self.reverting_tx_hashes.contains(tx)
 	}
 
-	fn is_optional(&self, tx: TxHash) -> bool {
-		self.dropping_tx_hashes.contains(&tx)
+	fn is_optional(&self, tx: &TxHash) -> bool {
+		self.dropping_tx_hashes.contains(tx)
 	}
 
 	fn hash(&self) -> B256 {
