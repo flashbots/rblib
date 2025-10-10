@@ -327,3 +327,108 @@ impl<P: Platform> CheckpointExt<P> for Checkpoint<P> {
 		self.root().created_at()
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use {
+		crate::alloy::primitives::Address,
+		alloy_origin::primitives::{TxHash, U256},
+		rblib::{prelude::*, test_utils::BlockContextMocked},
+		std::{
+			thread,
+			time::{Duration, Instant},
+		},
+	};
+
+	#[test]
+	fn test_is_empty_and_root() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let root = block.start();
+		let mid = root.barrier();
+		let leaf = mid.barrier();
+
+		assert!(root.is_empty());
+		assert_eq!(leaf.root(), root);
+	}
+
+	#[test]
+	fn test_gas_used_and_cumulative_gas_used() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let cp = block.start();
+		assert_eq!(cp.gas_used(), 0);
+		assert_eq!(cp.cumulative_gas_used(), 0);
+	}
+
+	#[test]
+	fn test_effective_tip_and_blob_gas() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let cp = block.start();
+		assert_eq!(cp.effective_tip_per_gas(), 0);
+		assert!(!cp.has_blobs());
+		assert_eq!(cp.blob_gas_used(), Some(0));
+		assert_eq!(cp.cumulative_blob_gas_used(), 0);
+	}
+
+	#[test]
+	fn test_to_between_linear_history() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let a = block.start();
+		let b = a.barrier();
+		let c = b.barrier();
+
+		let span1 = c.to(&a).unwrap();
+		let span2 = a.to(&c).unwrap();
+
+		assert_eq!(span1.len(), 3);
+		assert_eq!(span2.len(), 3);
+	}
+
+	#[test]
+	fn test_balance_and_nonce_defaults() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let cp = block.start();
+
+		let addr = Address::ZERO;
+		assert_eq!(cp.balance_of(addr).unwrap(), U256::ZERO);
+		assert_eq!(cp.nonce_of(addr).unwrap(), 0);
+	}
+
+	#[test]
+	fn test_signers_and_nonces_are_empty() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let cp = block.start();
+
+		assert!(cp.signers().is_empty());
+		assert!(cp.nonces().is_empty());
+	}
+
+	#[test]
+	fn test_hash_and_is_bundle_and_has_failures_defaults() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let cp = block.start();
+
+		assert_eq!(cp.hash(), None);
+		assert!(!cp.is_bundle());
+		assert!(!cp.has_failures());
+		assert_eq!(cp.failed_txs().count(), 0);
+	}
+
+	#[test]
+	fn test_contains_is_false_without_txs() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let cp = block.start();
+
+		let fake_hash = TxHash::repeat_byte(0x42);
+		assert!(!cp.contains(fake_hash));
+	}
+
+	#[test]
+	fn test_history_timestamps() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let cp1 = block.start();
+		thread::sleep(Duration::from_millis(5));
+		let cp2 = cp1.barrier();
+		assert!(cp2.building_since() <= Instant::now());
+		assert!(cp2.building_since() >= cp1.created_at());
+	}
+}

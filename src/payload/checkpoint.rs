@@ -546,3 +546,70 @@ impl<P: Platform> Display for Checkpoint<P> {
 		}
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use {
+		rblib::{prelude::*, test_utils::BlockContextMocked},
+		std::time::Instant,
+	};
+
+	#[test]
+	fn test_barrier_depth_and_is_barrier() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+
+		let checkpoint = block.start();
+
+		// Expected: initial checkpoint is depth 0 and is barrier
+		assert_eq!(checkpoint.depth(), 0);
+		assert!(checkpoint.is_barrier());
+		assert!(checkpoint.prev().is_none());
+	}
+
+	#[test]
+	fn test_named_barrier_and_prev_depth() {
+		// Outline:
+		// 1. create initial checkpoint (depth 0)
+		// 2. create named barrier on top
+		// 3. verify new depth is 1, prev is initial, and is_named_barrier returns
+		//    true
+		let root = {
+			let (block, _) = BlockContext::<Ethereum>::mocked();
+
+			let cp = block.start();
+			cp
+		};
+
+		let named = root.named_barrier("sequencer-synced");
+		assert_eq!(named.depth(), root.depth() + 1);
+		assert!(named.is_named_barrier("sequencer-synced"));
+		assert!(matches!(named.prev(), Some(_)));
+		assert_eq!(named.prev().unwrap().depth(), root.depth());
+	}
+
+	#[test]
+	fn test_created_at() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+
+		let checkpoint = block.start();
+
+		let now = Instant::now();
+		assert!(checkpoint.created_at() <= now);
+	}
+
+	#[test]
+	fn test_iter() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+
+		let checkpoint = block.start();
+
+		let checkpoint2 = checkpoint.barrier();
+		let checkpoint3 = checkpoint2.barrier();
+
+		let history: Vec<_> = checkpoint3.into_iter().collect();
+		assert_eq!(history.len(), 3);
+		assert_eq!(history[0].depth(), 2);
+		assert_eq!(history[1].depth(), 1);
+		assert_eq!(history[2].depth(), 0);
+	}
+}
