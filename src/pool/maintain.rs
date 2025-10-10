@@ -3,7 +3,7 @@
 //! This is not a public API, but rather a set of utilities that are used
 //! internally by the order pool to maintain its state and react to events.
 
-use {super::*, futures::StreamExt, std::collections::HashSet};
+use {super::*, futures::StreamExt};
 
 impl<P: Platform> OrderPool<P> {
 	/// Removes orders that became permanently ineligible after the given block
@@ -12,25 +12,13 @@ impl<P: Platform> OrderPool<P> {
 		&self,
 		header: &SealedHeader<types::Header<P>>,
 	) {
-		let ineligible = self
-			.inner
-			.orders
-			.iter()
-			.filter_map(|order| {
-				if let Order::Bundle(bundle) = order.value()
-					&& bundle.is_permanently_ineligible(header)
-				{
-					Some(*order.key())
-				} else {
-					None
-				}
-			})
-			.collect::<HashSet<_>>();
-
-		self
-			.inner
-			.orders
-			.retain(|order_hash, _| !ineligible.contains(order_hash));
+		self.inner.orders.retain(|_, order| {
+			if let Order::Bundle(bundle) = order {
+				!bundle.is_permanently_ineligible(header)
+			} else {
+				true
+			}
+		});
 	}
 
 	pub(super) fn start_pipeline_events_listener(
