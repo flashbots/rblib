@@ -136,38 +136,20 @@ pub trait CheckpointExt<P: Platform>: super::sealed::Sealed {
 	/// by `Checkpoint::new_at_block`.
 	fn building_since(&self) -> Instant;
 
-	/// Returns a span starting at the last checkpoint tagged with `tag` (if
-	/// any) up to and including `self`. If no such tag exists in history,
-	/// returns the full history.
-	fn history_since_tag(&self, tag: &str) -> Span<P> {
+	/// Returns a span starting at the last checkpoint tagged with `tag`.
+	/// Returns `None` if no such tag exists in history.
+	fn history_since_last_tag(&self, tag: &str) -> Option<Span<P>> {
 		let history = self.history();
-		let start = history
-			.iter()
-			.rposition(|cp| cp.is_tagged(tag))
-			.unwrap_or(0);
-		history.skip(start)
+		let start = history.iter().rposition(|cp| cp.is_tagged(tag))?;
+		Some(history.skip(start))
 	}
 
-	/// Returns the staging history since the last barrier or any tagged
-	/// checkpoint. If neither is present, returns the full history.
-	fn history_since_last_barrier_or_tag(&self) -> Span<P> {
+	/// Returns a span starting at the first checkpoint tagged with `tag`.
+	/// Returns `None` if no such tag exists in history.
+	fn history_since_first_tag(&self, tag: &str) -> Option<Span<P>> {
 		let history = self.history();
-		let start = history
-			.iter()
-			.rposition(|cp| cp.is_barrier() || cp.tag().is_some())
-			.unwrap_or(0);
-		history.skip(start)
-	}
-
-	/// Returns the sealed history up to (and excluding) the last barrier or
-	/// tagged checkpoint. If neither is present, returns an empty span.
-	fn history_sealed_until_last_barrier_or_tag(&self) -> Span<P> {
-		let history = self.history();
-		let end = history
-			.iter()
-			.rposition(|cp| cp.is_barrier() || cp.tag().is_some())
-			.map_or(0, |i| i + 1);
-		history.take(end)
+		let start = history.iter().position(|cp| cp.is_tagged(tag))?;
+		Some(history.skip(start))
 	}
 }
 
