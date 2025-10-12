@@ -318,11 +318,7 @@ impl<P: PlatformWithRpcTypes> Step<P> for PopulatePayload<P> {
 		while let Ok(input) = self.receiver.lock().await.try_recv() {
 			payload = match input {
 				InputPayloadItem::Barrier => payload.barrier(),
-				InputPayloadItem::TaggedBarrier(name) => {
-					let mut cp = payload.barrier();
-					cp.set_tag(Some(&name));
-					cp
-				}
+				InputPayloadItem::TaggedBarrier(name) => payload.barrier_with_tag(name),
 				InputPayloadItem::Tx(tx) => {
 					payload.apply(tx).expect("Failed to apply transaction")
 				}
