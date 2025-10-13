@@ -201,7 +201,7 @@ impl<P: Platform> Checkpoint<P> {
 	pub fn apply_with_tag<S>(
 		&self,
 		executable: impl IntoExecutable<P, S>,
-		tag: impl Into<Arc<str>>,
+		tag: impl Into<Box<str>>,
 	) -> Result<Self, ExecutionError<P>> {
 		let mutation = Mutation::Executable(
 			executable
@@ -221,7 +221,7 @@ impl<P: Platform> Checkpoint<P> {
 
 	/// Creates a new tagged barrier checkpoint on top of the current checkpoint.
 	#[must_use]
-	pub fn barrier_with_tag(&self, tag: impl Into<Arc<str>>) -> Self {
+	pub fn barrier_with_tag(&self, tag: impl Into<Box<str>>) -> Self {
 		Self::apply_with(self, Mutation::Barrier, Some(tag.into()))
 	}
 }
@@ -231,7 +231,7 @@ impl<P: Platform> Checkpoint<P> {
 	// Create a new checkpoint on top of the current one with the given mutation.
 	// See public builder API.
 	#[must_use]
-	fn apply_with(&self, mutation: Mutation<P>, tag: Option<Arc<str>>) -> Self {
+	fn apply_with(&self, mutation: Mutation<P>, tag: Option<Box<str>>) -> Self {
 		Self {
 			inner: Arc::new(CheckpointInner {
 				block: self.inner.block.clone(),
@@ -327,10 +327,10 @@ struct CheckpointInner<P: Platform> {
 	/// The timestamp when this checkpoint was created.
 	created_at: Instant,
 
-	/// Optional tag for this checkpoint instance. Tags are metadata used to mark
+	/// Optional tag for this checkpoint. Tags are metadata used to mark
 	/// checkpoints for later reference in history queries and display/debug
 	/// output.
-	tag: Option<Arc<str>>,
+	tag: Option<Box<str>>,
 }
 
 /// Converts a checkpoint into a vector of transactions that were applied to
