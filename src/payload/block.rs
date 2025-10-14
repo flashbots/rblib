@@ -160,6 +160,15 @@ impl<P: Platform> BlockContext<P> {
 	pub fn start(&self) -> Checkpoint<P> {
 		Checkpoint::new_at_block(self.clone())
 	}
+
+	/// Given a payload checkpoint, this method builds a new payload on top of
+	/// this block that is ready to be handed back to the CL client as a response
+	/// to the `ForkchoiceUpdated` request.
+	pub fn build_payload(
+		payload: &Checkpoint<P>,
+	) -> Result<types::BuiltPayload<P>, PayloadBuilderError> {
+		payload.build_payload()
+	}
 }
 
 struct BlockContextInner<P: Platform> {

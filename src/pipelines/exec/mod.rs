@@ -189,9 +189,9 @@ impl<P: Platform, Provider: traits::ProviderBounds<P>>
 			// If there is no next step, we are done with the pipeline execution.
 			// We can finalize the pipeline and return the output as the final
 			// result of the pipeline run.
-			return Cursor::Finalizing(self.finalize(
-				P::build_payload(input, self.service.provider()).map_err(Arc::new),
-			));
+			return Cursor::Finalizing(
+				self.finalize(input.build_payload().map_err(Arc::new)),
+			);
 		};
 
 		// there is a next step to be executed, create a cursor that will
@@ -215,10 +215,7 @@ impl<P: Platform, Provider: traits::ProviderBounds<P>>
 			);
 
 			return Cursor::<P>::Finalizing(
-				self.finalize(
-					P::build_payload(self.block.start(), self.service.provider())
-						.map_err(Arc::new),
-				),
+				self.finalize(self.block.start().build_payload().map_err(Arc::new)),
 			);
 		};
 

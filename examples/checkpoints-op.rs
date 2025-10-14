@@ -27,7 +27,7 @@ use {
 fn main() -> eyre::Result<()> {
 	// This is the entry point of the payload building API. We construct a
 	// building context for a given block and attributes.
-	let (block, provider) = BlockContext::<Optimism>::mocked();
+	let (block, _) = BlockContext::<Optimism>::mocked();
 
 	// Next we progressively build the payload by creating checkpoints that have
 	// state mutations applied to them.
@@ -48,7 +48,8 @@ fn main() -> eyre::Result<()> {
 	// Checkpoints can be applied on top of each other, creating a progressive
 	// history of state changes.
 	let payload = start.apply(tx1)?.apply(bundle)?.apply(tx4)?;
-	let built_payload = Optimism::build_payload(payload, &provider)
+	let built_payload = payload
+		.build_payload()
 		.expect("payload should be built successfully");
 
 	println!("{built_payload:#?}");

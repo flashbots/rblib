@@ -12,7 +12,7 @@ use {
 		network::Network as AlloyNetwork,
 		signers::Signature,
 	},
-	reth::ethereum::primitives::SignedTransaction,
+	reth::{ethereum::primitives::SignedTransaction, providers::StateProvider},
 	serde::{Serialize, de::DeserializeOwned},
 	std::sync::Arc,
 };
@@ -101,16 +101,15 @@ pub trait Platform:
 	where
 		P: traits::PlatformExecBounds<Self>;
 
-	/// Given a payload checkpoint and access to the node state, this method
-	/// builds a new payload that is ready to be handed back to the CL client as
-	/// a response to the `ForkchoiceUpdated` request.
-	fn build_payload<P, Provider>(
+	/// Given a payload checkpoint and access to the latest block state, this
+	/// method builds a new payload that is ready to be handed back to the CL
+	/// client as a response to the `ForkchoiceUpdated` request.
+	fn build_payload<P>(
 		payload: Checkpoint<P>,
-		provider: &Provider,
+		provider: &dyn StateProvider,
 	) -> Result<types::BuiltPayload<P>, PayloadBuilderError>
 	where
-		P: traits::PlatformExecBounds<Self>,
-		Provider: traits::ProviderBounds<Self>;
+		P: traits::PlatformExecBounds<Self>;
 }
 
 /// This is an optional extension trait for platforms that want to provide info

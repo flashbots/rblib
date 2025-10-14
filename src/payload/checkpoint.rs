@@ -224,6 +224,15 @@ impl<P: Platform> Checkpoint<P> {
 	pub fn barrier_with_tag(&self, tag: impl Into<Box<str>>) -> Self {
 		Self::apply_with(self, Mutation::Barrier, Some(tag.into()))
 	}
+
+	/// Given this checkpoint, this method builds a new payload on top of this
+	/// block base state that is ready to be handed back to the CL client as a
+	/// response to the `ForkchoiceUpdated` request.
+	pub fn build_payload(
+		&self,
+	) -> Result<types::BuiltPayload<P>, PayloadBuilderError> {
+		P::build_payload(self.clone(), self.block().base_state())
+	}
 }
 
 /// Internal API

@@ -50,13 +50,12 @@ impl Platform for Ethereum {
 		}
 	}
 
-	fn build_payload<P, Provider>(
+	fn build_payload<P>(
 		payload: Checkpoint<P>,
-		provider: &Provider,
+		provider: &dyn StateProvider,
 	) -> Result<types::BuiltPayload<P>, PayloadBuilderError>
 	where
 		P: traits::PlatformExecBounds<Self>,
-		Provider: traits::ProviderBounds<P>,
 	{
 		let evm_config = payload.block().evm_config().clone();
 		let payload_config = PayloadConfig {
@@ -77,6 +76,10 @@ impl Platform for Ethereum {
 		let builder_config = EthereumBuilderConfig::new();
 		let transactions = payload.history().transactions().cloned().collect();
 		let transactions = Box::new(FixedTransactions::<Self>::new(transactions));
+
+		// TODO: wrap provider and payload.block().chainspec() in a
+		// StateProviderFactory + ChainSpecProvider to be able to use
+		// reth_ethereum_payload_builder::default_ethereum_payload
 
 		default_ethereum_payload(
 			evm_config,
