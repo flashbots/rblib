@@ -236,7 +236,8 @@ impl StepPath {
 		Self::epilogue_step(0)
 	}
 
-	/// Returns a leaf step path pointing at a specific epilogue step with the given index.
+	/// Returns a leaf step path pointing at a specific epilogue step with the
+	/// given index.
 	pub(in crate::pipelines) fn epilogue_step(epilogue_index: usize) -> Self {
 		Self(smallvec![epilogue_index + EPILOGUE_START_INDEX])
 	}
@@ -345,7 +346,8 @@ impl<'a, P: Platform> StepNavigator<'a, P> {
 
 		// pipeline has no prologue
 		if pipeline.steps().is_empty() {
-			// If there are no steps, but there is an epilogue, return the first epilogue step.
+			// If there are no steps, but there is an epilogue, return the first
+			// epilogue step.
 			if !pipeline.epilogue().is_empty() {
 				return Self(StepPath::epilogue(), vec![pipeline]).enter();
 			}
@@ -558,11 +560,13 @@ impl<P: Platform> StepNavigator<'_, P> {
 			let epilogue_index = path.leaf() - EPILOGUE_START_INDEX;
 			match enclosing_pipeline.epilogue().get(epilogue_index)? {
 				StepOrPipeline::Step(_) => {
-					// if we are pointing at an epilogue step, we can just return ourselves.
+					// if we are pointing at an epilogue step, we can just return
+					// ourselves.
 					Some(Self(path, ancestors))
 				}
 				StepOrPipeline::Pipeline(_, nested) => {
-					// if we are pointing at a pipeline, we need to dig into its entrypoint.
+					// if we are pointing at a pipeline, we need to dig into its
+					// entrypoint.
 					Some(StepNavigator(path, ancestors).join(Self::entrypoint(nested)?))
 				}
 			}
@@ -578,7 +582,8 @@ impl<P: Platform> StepNavigator<'_, P> {
 					Some(Self(path, ancestors))
 				}
 				StepOrPipeline::Pipeline(_, nested) => {
-					// if we are pointing at a pipeline, we need to dig into its entrypoint.
+					// if we are pointing at a pipeline, we need to dig into its
+					// entrypoint.
 					Some(StepNavigator(path, ancestors).join(Self::entrypoint(nested)?))
 				}
 			}
@@ -587,11 +592,12 @@ impl<P: Platform> StepNavigator<'_, P> {
 
 	/// Finds the next step to run when a loop is finished.
 	///
-	/// The next step could be either the first epilogue step of the current pipeline,
-	/// or the next step in the parent pipeline.
+	/// The next step could be either the first epilogue step of the current
+	/// pipeline, or the next step in the parent pipeline.
 	fn after_loop(self) -> Option<Self> {
 		if !self.pipeline().epilogue().is_empty() {
-			// we've reached the epilogue of this pipeline, go to the first epilogue step
+			// we've reached the epilogue of this pipeline, go to the first epilogue
+			// step
 			Some(Self(
 				self.0.replace_leaf(EPILOGUE_START_INDEX),
 				self.1.clone(),

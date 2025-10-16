@@ -82,11 +82,13 @@ impl<P: Platform> Pipeline<P> {
 	}
 
 	/// A step that happens as the last step of the block after the whole payload
-	/// has been built. Can be called multiple times to add multiple epilogue steps.
+	/// has been built. Can be called multiple times to add multiple epilogue
+	/// steps.
 	#[must_use]
 	pub fn with_epilogue(self, step: impl Step<P>) -> Self {
 		let mut this = self;
-		this.epilogue
+		this
+			.epilogue
 			.push(StepOrPipeline::Step(Arc::new(StepInstance::new(step))));
 		this
 	}
@@ -101,7 +103,8 @@ impl<P: Platform> Pipeline<P> {
 	) -> Self {
 		let mut this = self;
 		let nested_pipeline = nested.into_pipeline();
-		this.epilogue
+		this
+			.epilogue
 			.push(StepOrPipeline::Pipeline(behavior, nested_pipeline));
 		this
 	}
