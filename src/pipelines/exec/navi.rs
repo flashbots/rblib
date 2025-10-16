@@ -426,10 +426,9 @@ impl<'a, P: Platform> StepNavigator<'a, P> {
 			if epilogue_index + 1 < enclosing_pipeline.epilogue().len() {
 				// there are more epilogue steps, go to the next one
 				return Self(self.0.increment_leaf(), self.1.clone()).enter();
-			} else {
-				// this is the last epilogue step, we are done with this pipeline
-				return self.next_in_parent();
 			}
+   				// this is the last epilogue step, we are done with this pipeline
+   				return self.next_in_parent();
 		}
 
 		if self.is_prologue() {
@@ -595,17 +594,17 @@ impl<P: Platform> StepNavigator<'_, P> {
 	/// The next step could be either the first epilogue step of the current
 	/// pipeline, or the next step in the parent pipeline.
 	fn after_loop(self) -> Option<Self> {
-		if !self.pipeline().epilogue().is_empty() {
-			// we've reached the epilogue of this pipeline, go to the first epilogue
-			// step
-			Some(Self(
-				self.0.replace_leaf(EPILOGUE_START_INDEX),
-				self.1.clone(),
-			))
-			.and_then(|nav| nav.enter())
-		} else {
-			self.next_in_parent()
-		}
+		if self.pipeline().epilogue().is_empty() {
+  			self.next_in_parent()
+  		} else {
+  			// we've reached the epilogue of this pipeline, go to the first epilogue
+  			// step
+  			Some(Self(
+  				self.0.replace_leaf(EPILOGUE_START_INDEX),
+  				self.1.clone(),
+  			))
+  			.and_then(|nav| nav.enter())
+  		}
 	}
 
 	/// Finds the next step to run after the prologue of the current pipeline.
