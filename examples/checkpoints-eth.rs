@@ -4,22 +4,11 @@
 //! test-utils provided helpers for creating mock instances.
 
 use {
-	alloy::{
-		consensus::{EthereumTxEnvelope, Transaction, TxEip4844},
-		network::{TransactionBuilder, TxSignerSync},
-		primitives::{Address, U256},
-		signers::local::PrivateKeySigner,
-	},
+	alloy::{consensus::Transaction, primitives::U256},
 	rblib::{
 		alloy,
 		prelude::*,
-		reth,
-		test_utils::{BlockContextMocked, FundedAccounts},
-	},
-	reth::{
-		ethereum::{TransactionSigned, primitives::SignedTransaction},
-		primitives::Recovered,
-		rpc::types::TransactionRequest,
+		test_utils::{BlockContextMocked, FundedAccounts, transfer_tx},
 	},
 };
 
@@ -68,28 +57,4 @@ fn main() -> eyre::Result<()> {
 	assert_eq!(transactions[3].value(), U256::from(5_000u64));
 
 	Ok(())
-}
-
-fn transfer_tx(
-	signer: &PrivateKeySigner,
-	nonce: u64,
-	value: U256,
-) -> Recovered<EthereumTxEnvelope<TxEip4844>> {
-	let mut tx = TransactionRequest::default()
-		.with_nonce(nonce)
-		.with_to(Address::random())
-		.value(value)
-		.with_gas_price(1_000_000_000)
-		.with_gas_limit(21_000)
-		.with_max_priority_fee_per_gas(1_000_000)
-		.with_max_fee_per_gas(2_000_000)
-		.build_unsigned()
-		.expect("valid transaction request");
-
-	let sig = signer
-		.sign_transaction_sync(&mut tx)
-		.expect("signing should succeed");
-
-	TransactionSigned::new_unhashed(tx.into(), sig) //
-		.with_signer(signer.address())
 }

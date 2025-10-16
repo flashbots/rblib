@@ -550,6 +550,8 @@ impl<P: Platform> Display for Checkpoint<P> {
 #[cfg(test)]
 mod tests {
 	use {
+		crate::test_utils::{FundedAccounts, transfer_tx},
+		alloy_origin::primitives::U256,
 		rblib::{prelude::*, test_utils::BlockContextMocked},
 		std::time::Instant,
 	};
@@ -591,10 +593,10 @@ mod tests {
 	fn test_created_at() {
 		let (block, _) = BlockContext::<Ethereum>::mocked();
 
-		let checkpoint = block.start();
-
-		let now = Instant::now();
-		assert!(checkpoint.created_at() <= now);
+		let before = Instant::now();
+		let cp = block.start();
+		let after = Instant::now();
+		assert!((before..=after).contains(&cp.created_at()));
 	}
 
 	#[test]
@@ -606,10 +608,18 @@ mod tests {
 		let checkpoint2 = checkpoint.barrier();
 		let checkpoint3 = checkpoint2.barrier();
 
-		let history: Vec<_> = checkpoint3.into_iter().collect();
-		assert_eq!(history.len(), 3);
-		assert_eq!(history[0].depth(), 2);
-		assert_eq!(history[1].depth(), 1);
-		assert_eq!(history[2].depth(), 0);
+		let tx = transfer_tx(&FundedAccounts::signer(0), 0, U256::from(10u64));
+		let checkpoint4 = checkpoint3.apply(tx).unwrap();
+
+		let history: Vec<_> = checkpoint4.into_iter().collect();
+		assert_eq!(history.len(), 4);
+		assert_eq!(history[0], checkpoint4);
+		assert_eq!(history[0].depth(), 3);
+		assert_eq!(history[1], checkpoint3);
+		assert_eq!(history[1].depth(), 2);
+		assert_eq!(history[2], checkpoint2);
+		assert_eq!(history[2].depth(), 1);
+		assert_eq!(history[3], checkpoint);
+		assert_eq!(history[3].depth(), 0);
 	}
 }

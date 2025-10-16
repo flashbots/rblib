@@ -331,9 +331,13 @@ impl<P: Platform> CheckpointExt<P> for Checkpoint<P> {
 #[cfg(test)]
 mod tests {
 	use {
-		crate::alloy::primitives::Address,
-		alloy_origin::primitives::{TxHash, U256},
-		rblib::{prelude::*, test_utils::BlockContextMocked},
+		crate::{
+			alloy::primitives::Address,
+			payload::{Checkpoint, CheckpointExt},
+			prelude::{BlockContext, Ethereum},
+			test_utils::{BlockContextMocked, FundedAccounts, transfer_tx},
+		},
+		alloy_origin::primitives::U256,
 		std::{
 			thread,
 			time::{Duration, Instant},
@@ -341,94 +345,220 @@ mod tests {
 	};
 
 	#[test]
-	fn test_is_empty_and_root() {
+	fn test_new_at_block() {
 		let (block, _) = BlockContext::<Ethereum>::mocked();
-		let root = block.start();
-		let mid = root.barrier();
-		let leaf = mid.barrier();
+		let cp = Checkpoint::new_at_block(block);
 
-		assert!(root.is_empty());
-		assert_eq!(leaf.root(), root);
-	}
+		let cp2 = cp.barrier();
+		let cp3 = cp2.barrier();
 
-	#[test]
-	fn test_gas_used_and_cumulative_gas_used() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
-		let cp = block.start();
+		assert!(cp.is_empty());
+		assert_eq!(cp2.root(), cp);
+		assert_eq!(cp3.root(), cp);
+
 		assert_eq!(cp.gas_used(), 0);
 		assert_eq!(cp.cumulative_gas_used(), 0);
-	}
 
-	#[test]
-	fn test_effective_tip_and_blob_gas() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
-		let cp = block.start();
 		assert_eq!(cp.effective_tip_per_gas(), 0);
 		assert!(!cp.has_blobs());
 		assert_eq!(cp.blob_gas_used(), Some(0));
 		assert_eq!(cp.cumulative_blob_gas_used(), 0);
-	}
 
-	#[test]
-	fn test_to_between_linear_history() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
-		let a = block.start();
-		let b = a.barrier();
-		let c = b.barrier();
+		let span1 = cp3.to(&cp).unwrap();
+		let span2 = cp.to(&cp3).unwrap();
 
-		let span1 = c.to(&a).unwrap();
-		let span2 = a.to(&c).unwrap();
-
+		assert_eq!(span1.len(), span2.len());
+		for i in 0..span2.len() {
+			assert_eq!(span1.at(i), span2.at(i));
+		}
 		assert_eq!(span1.len(), 3);
 		assert_eq!(span2.len(), 3);
-	}
-
-	#[test]
-	fn test_balance_and_nonce_defaults() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
-		let cp = block.start();
 
 		let addr = Address::ZERO;
 		assert_eq!(cp.balance_of(addr).unwrap(), U256::ZERO);
 		assert_eq!(cp.nonce_of(addr).unwrap(), 0);
-	}
-
-	#[test]
-	fn test_signers_and_nonces_are_empty() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
-		let cp = block.start();
 
 		assert!(cp.signers().is_empty());
 		assert!(cp.nonces().is_empty());
-	}
-
-	#[test]
-	fn test_hash_and_is_bundle_and_has_failures_defaults() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
-		let cp = block.start();
 
 		assert_eq!(cp.hash(), None);
 		assert!(!cp.is_bundle());
 		assert!(!cp.has_failures());
 		assert_eq!(cp.failed_txs().count(), 0);
+
+		let random_addr = Address::random();
+		assert_eq!(
+			cp.balance_of(random_addr).unwrap(),
+			U256::ZERO,
+			"Nonexistent account should have zero balance"
+		);
+
+		assert_eq!(
+			cp.nonce_of(random_addr).unwrap(),
+			0,
+			"Nonexistent account should have zero nonce"
+		);
 	}
 
 	#[test]
 	fn test_contains_is_false_without_txs() {
 		let (block, _) = BlockContext::<Ethereum>::mocked();
-		let cp = block.start();
+		let cp1 = Checkpoint::new_at_block(block);
 
-		let fake_hash = TxHash::repeat_byte(0x42);
-		assert!(!cp.contains(fake_hash));
+		let tx1 = transfer_tx(&FundedAccounts::signer(0), 0, U256::from(50_000u64));
+		let tx1_hash = tx1.hash().clone();
+		assert!(!cp1.contains(tx1_hash));
+		let cp2 = cp1.apply(tx1).unwrap();
+
+		assert!(cp2.contains(tx1_hash));
 	}
 
 	#[test]
 	fn test_history_timestamps() {
 		let (block, _) = BlockContext::<Ethereum>::mocked();
-		let cp1 = block.start();
+		let cp1 = Checkpoint::new_at_block(block);
+
 		thread::sleep(Duration::from_millis(5));
+
 		let cp2 = cp1.barrier();
+
 		assert!(cp2.building_since() <= Instant::now());
 		assert!(cp2.building_since() >= cp1.created_at());
+	}
+
+	#[test]
+	fn test_to_self() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let cp = Checkpoint::new_at_block(block);
+
+		// to(self, self) should produce a span of length 1 containing the
+		// checkpoint itself
+		let span = cp.to(&cp).expect("to(self,self) must succeed");
+		assert_eq!(span.len(), 1);
+		assert_eq!(*span.at(0).unwrap(), cp);
+	}
+
+	#[test]
+	fn test_to_non_linear_error() {
+		let (block_a, _) = BlockContext::<Ethereum>::mocked();
+		let (block_b, _) = BlockContext::<Ethereum>::mocked();
+
+		let cp_a = Checkpoint::new_at_block(block_a);
+		let cp_b = Checkpoint::new_at_block(block_b);
+
+		// They are not on the same linear history, so to should return an Err.
+		assert!(cp_a.to(&cp_b).is_err());
+		assert!(cp_b.to(&cp_a).is_err());
+	}
+
+	#[test]
+	fn test_to_includes_all_intermediates_and_is_linear() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let base = Checkpoint::new_at_block(block);
+
+		// base -> x -> y
+		let tx_x = transfer_tx(&FundedAccounts::signer(0), 0, U256::from(10u64));
+		let x = base.apply(tx_x).unwrap();
+
+		let tx_y = transfer_tx(&FundedAccounts::signer(1), 0, U256::from(20u64));
+		let y = x.apply(tx_y).unwrap();
+
+		let x_barrier = x.barrier();
+		let y_barrier = y.barrier();
+
+		// `to` between base and y_barrier should include `base``, `x` (or
+		// x_barrier), `y` (or y_barrier)
+		let span_by = y_barrier
+			.to(&base)
+			.expect("to should succeed for linear history");
+		let collected: Vec<Checkpoint<Ethereum>> = (0..span_by.len())
+			.map(|i| span_by.at(i).unwrap().clone())
+			.collect();
+
+		assert!(collected.contains(&base));
+		assert!(collected.contains(&y_barrier));
+		assert!(collected.iter().any(|cp| *cp == x || *cp == x_barrier));
+	}
+
+	#[test]
+	fn test_to_different_roots_error() {
+		let (block1, _) = BlockContext::<Ethereum>::mocked();
+		let (block2, _) = BlockContext::<Ethereum>::mocked();
+
+		let root1 = Checkpoint::new_at_block(block1);
+		let root2 = Checkpoint::new_at_block(block2);
+
+		let tx = transfer_tx(&FundedAccounts::signer(0), 0, U256::from(5u64));
+		let root1_child = root1.apply(tx).unwrap();
+
+		assert!(root1_child.to(&root2).is_err());
+		assert!(root2.to(&root1_child).is_err());
+	}
+
+	#[test]
+	fn test_effective_tip_checkpoint() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let cp = Checkpoint::new_at_block(block);
+		assert_eq!(
+			cp.effective_tip_per_gas(),
+			0,
+			"Empty checkpoint should have zero tip"
+		);
+
+		let tx = transfer_tx(&FundedAccounts::signer(0), 0, U256::from(100u64));
+		let cp2 = cp.apply(tx.clone()).unwrap();
+
+		let tip = cp2.effective_tip_per_gas();
+		assert!(tip > 0, "Transaction should have positive effective tip");
+	}
+
+	#[test]
+	fn test_history_staging_no_barrier() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let base = Checkpoint::new_at_block(block);
+
+		let tx1 = transfer_tx(&FundedAccounts::signer(0), 0, U256::from(50u64));
+		let cp1 = base.apply(tx1).unwrap();
+
+		let tx2 = transfer_tx(&FundedAccounts::signer(1), 0, U256::from(75u64));
+		let cp2 = cp1.apply(tx2).unwrap();
+
+		let staging = cp2.history_staging();
+		let full = cp2.history();
+
+		assert_eq!(
+			staging.len(),
+			full.len(),
+			"Without barriers, staging should equal full history"
+		);
+	}
+
+	#[test]
+	fn test_history_staging_with_barrier() {
+		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let base = Checkpoint::new_at_block(block);
+
+		let tx1 = transfer_tx(&FundedAccounts::signer(0), 0, U256::from(50u64));
+		let cp1 = base.apply(tx1).unwrap();
+
+		let barrier = cp1.barrier();
+
+		let tx2 = transfer_tx(&FundedAccounts::signer(1), 0, U256::from(75u64));
+		let cp2 = barrier.apply(tx2).unwrap();
+
+		let staging = cp2.history_staging();
+
+		// Staging should only include checkpoints after the barrier
+		assert!(
+			staging.len() < cp2.history().len(),
+			"Staging should be shorter than full history"
+		);
+		let sealed = cp2.history_sealed();
+
+		// Sealed should include everything up to and including the barrier
+		assert!(
+			sealed.len() > 0,
+			"Sealed should include checkpoints up to barrier"
+		);
 	}
 }

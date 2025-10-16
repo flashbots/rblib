@@ -20,6 +20,7 @@ mod mock;
 mod node;
 mod platform;
 mod step;
+mod transactions;
 
 #[allow(unused_imports)]
 pub(crate) use step::fake_step;
@@ -32,6 +33,7 @@ pub use {
 	platform::{TestNodeFactory, TestablePlatform},
 	rblib_tests_macros::{assert_is_dyn_safe, if_platform, rblib_test},
 	step::{AlwaysBreakStep, AlwaysFailStep, AlwaysOkStep, OneStep},
+	transactions::transfer_tx,
 };
 
 #[cfg(feature = "optimism")]
