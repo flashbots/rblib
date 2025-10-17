@@ -19,6 +19,9 @@ use {
 
 mod limits;
 mod pool;
+mod receipt;
+
+pub use receipt::EthereumReceiptBuilder;
 
 /// Platform definition for ethereum mainnet.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -30,6 +33,7 @@ impl Platform for Ethereum {
 	type EvmConfig = EthEvmConfig;
 	type NodeTypes = EthereumNode;
 	type PooledTransaction = EthPooledTransaction;
+	type ReceiptBuilder = EthereumReceiptBuilder;
 
 	fn evm_config<P>(chainspec: Arc<types::ChainSpec<Self>>) -> Self::EvmConfig {
 		EthEvmConfig::new(chainspec)

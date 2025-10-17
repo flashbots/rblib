@@ -20,7 +20,9 @@ use {
 };
 
 mod limits;
-pub use limits::OptimismDefaultLimits;
+mod receipt;
+
+pub use {limits::OptimismDefaultLimits, receipt::OptimismReceiptBuilder};
 
 /// Platform definition for Optimism Rollup chains.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -32,6 +34,7 @@ impl Platform for Optimism {
 	type EvmConfig = OpEvmConfig;
 	type NodeTypes = OpNode;
 	type PooledTransaction = OpPooledTransaction;
+	type ReceiptBuilder = OptimismReceiptBuilder;
 
 	fn evm_config<P>(
 		chainspec: std::sync::Arc<types::ChainSpec<P>>,

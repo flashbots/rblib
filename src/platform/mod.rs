@@ -21,9 +21,10 @@ mod bundle;
 mod ethereum;
 mod ext;
 mod limits;
+mod receipt;
 
 pub mod types;
-pub use {bundle::*, ethereum::*, ext::*, limits::*};
+pub use {bundle::*, ethereum::*, ext::*, limits::*, receipt::*};
 
 #[cfg(feature = "optimism")]
 mod optimism;
@@ -83,6 +84,10 @@ pub trait Platform:
 	/// If no limits are set on a pipeline explicitly, a default instance of this
 	/// type will be used automatically.
 	type DefaultLimits: PlatformLimits<Self>;
+
+	/// Type that builds platform-specific transaction receipts from execution
+	/// results.
+	type ReceiptBuilder: ReceiptBuilder<Self>;
 
 	/// Instantiate the EVM configuration for the platform with a given chain
 	/// specification.
