@@ -67,25 +67,7 @@ impl<P: Platform> Iterator for StepPathIter<'_, P> {
 			if frame.epilogue_ix < frame.pipeline.epilogue.len() {
 				let ix = frame.epilogue_ix;
 				frame.epilogue_ix += 1;
-				match &frame.pipeline.epilogue[ix] {
-					StepOrPipeline::Step(_) => {
-						return Some(
-							frame.path.clone().concat(StepPath::epilogue_step(ix)),
-						);
-					}
-					StepOrPipeline::Pipeline(_, nested) => {
-						let next_path =
-							frame.path.clone().concat(StepPath::epilogue_step(ix));
-						self.stack.push(Frame {
-							pipeline: nested,
-							path: next_path,
-							next_ix: 0,
-							yielded_prologue: false,
-							epilogue_ix: 0,
-						});
-						continue;
-					}
-				}
+				return Some(frame.path.clone().concat(StepPath::epilogue_step(ix)));
 			}
 
 			// Done with this frame; pop and continue with parent.

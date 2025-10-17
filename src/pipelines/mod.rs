@@ -40,7 +40,7 @@ pub enum Behavior {
 }
 
 pub struct Pipeline<P: Platform> {
-	epilogue: Vec<StepOrPipeline<P>>,
+	epilogue: Vec<Arc<StepInstance<P>>>,
 	prologue: Option<Arc<StepInstance<P>>>,
 	steps: Vec<StepOrPipeline<P>>,
 	limits: Option<Arc<dyn ScopedLimits<P>>>,
@@ -87,25 +87,7 @@ impl<P: Platform> Pipeline<P> {
 	#[must_use]
 	pub fn with_epilogue(self, step: impl Step<P>) -> Self {
 		let mut this = self;
-		this
-			.epilogue
-			.push(StepOrPipeline::Step(Arc::new(StepInstance::new(step))));
-		this
-	}
-
-	/// Adds a nested pipeline to the epilogue.
-	#[must_use]
-	#[track_caller]
-	pub fn with_epilogue_pipeline<T>(
-		self,
-		behavior: Behavior,
-		nested: impl IntoPipeline<P, T>,
-	) -> Self {
-		let mut this = self;
-		let nested_pipeline = nested.into_pipeline();
-		this
-			.epilogue
-			.push(StepOrPipeline::Pipeline(behavior, nested_pipeline));
+		this.epilogue.push(Arc::new(StepInstance::new(step)));
 		this
 	}
 
@@ -195,7 +177,7 @@ impl<P: Platform> Pipeline<P> {
 		self.prologue.as_ref()
 	}
 
-	pub(crate) fn epilogue(&self) -> &[StepOrPipeline<P>] {
+	pub(crate) fn epilogue(&self) -> &[Arc<StepInstance<P>>] {
 		&self.epilogue
 	}
 
