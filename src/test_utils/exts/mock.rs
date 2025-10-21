@@ -89,15 +89,15 @@ impl<P: Platform> PayloadBuilderAttributesMocked<P>
 /// Allows the creation of a block context for the first block post genesis with
 /// all [`FundedAccounts`] pre-funded with 100 ETH.
 pub trait BlockContextMocked<P: Platform, Marker = ()> {
-	/// Returns a tuple of:
-	/// 1. an instance of a [`BlockContext`] that is rooted at the genesis block
-	///    the given platform's DEV chainspec.
-	/// 2. An instance of a platform-specific [`StateProviderFactory`] that has
-	///    its state pre-populated with [`FundedAccounts`] for the given platform.
-	///    This state provider together with a checkpoint created on top of the
-	///    returned [`BlockContext`] can be used to construct a payload using
-	///    [`Platform::build_payload`].
-	fn mocked() -> (BlockContext<P>, impl traits::ProviderBounds<P>);
+	/// Returns an instance of a [`BlockContext`] that is rooted at the genesis
+	/// block the given platform's DEV chainspec.
+	///
+	/// The base state used in the [`BlockContext`] is platform-specific and
+	/// pre-populated with [`FundedAccounts`] for the given platform. This
+	/// [`BlockContext`] instance together with a checkpoint created on top of it
+	/// can be used to construct a payload using [`Platform::build_payload`] with
+	/// [`BlockContext::build_payload`].
+	fn mocked() -> BlockContext<P>;
 }
 
 impl<P: Platform> BlockContextMocked<P, Variant<0>> for BlockContext<P>
@@ -110,9 +110,10 @@ where
 		>,
 	>,
 {
-	fn mocked() -> (BlockContext<P>, impl traits::ProviderBounds<P>) {
+	fn mocked() -> BlockContext<P> {
 		let chainspec = LazyLock::force(&DEV).clone().with_funded_accounts();
-		let provider = GenesisProviderFactory::<P>::new(chainspec.clone());
+		let provider_factory = GenesisProviderFactory::<P>::new(chainspec.clone());
+		let base_state = provider_factory.state_provider();
 
 		let parent = SealedHeader::new(
 			chainspec.genesis_header().clone(),
@@ -121,15 +122,13 @@ where
 
 		let payload_attribs = <EthPayloadBuilderAttributes as PayloadBuilderAttributesMocked<P>>::mocked(&parent);
 
-		let block = BlockContext::<P>::new(
+		BlockContext::<P>::new(
 			parent,
 			payload_attribs,
-			provider.state_provider(),
+			base_state,
 			chainspec.clone(),
 		)
-		.expect("Failed to create mocked block context");
-
-		(block, provider)
+		.expect("Failed to create mocked block context")
 	}
 }
 
@@ -144,10 +143,11 @@ where
 		>,
 	>,
 {
-	fn mocked() -> (BlockContext<P>, impl traits::ProviderBounds<P>) {
+	fn mocked() -> BlockContext<P> {
 		use reth::optimism::{chainspec::OP_DEV, node::OpPayloadBuilderAttributes};
 		let chainspec = LazyLock::force(&OP_DEV).clone().with_funded_accounts();
-		let provider = GenesisProviderFactory::<P>::new(chainspec.clone());
+		let provider_factory = GenesisProviderFactory::<P>::new(chainspec.clone());
+		let base_state = provider_factory.state_provider();
 
 		let parent = SealedHeader::new(
 			chainspec.genesis_header().clone(),
@@ -159,14 +159,12 @@ where
 				&parent,
 			);
 
-		let block = BlockContext::<P>::new(
+		BlockContext::<P>::new(
 			parent,
 			payload_attributes,
-			provider.state_provider(),
+			base_state,
 			chainspec.clone(),
 		)
-		.expect("Failed to create mocked block context");
-
-		(block, provider)
+		.expect("Failed to create mocked block context")
 	}
 }

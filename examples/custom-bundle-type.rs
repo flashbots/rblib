@@ -18,7 +18,7 @@ use {
 		ethereum::primitives::SignedTransaction,
 		optimism::primitives::OpTransactionSigned,
 		primitives::Recovered,
-		providers::{StateProvider, StateProviderFactory},
+		providers::StateProvider,
 		revm::db::BundleState,
 	},
 	serde::{Deserialize, Serialize},
@@ -64,7 +64,7 @@ impl Platform for CustomPlatform {
 
 fn main() -> eyre::Result<()> {
 	// Construct a mock build context for the custom platform.
-	let (block, provider) = BlockContext::<CustomPlatform>::mocked();
+	let block = BlockContext::<CustomPlatform>::mocked();
 
 	// begin building the payload by creating the first checkpoint for the block.
 	let start = block.start();
@@ -97,11 +97,9 @@ fn main() -> eyre::Result<()> {
 		))
 	));
 
-	// build payload with the latest state provider
-	let state_provider = provider
-		.state_by_block_hash(payload.block().parent().hash())
-		.expect("failed to retrieve state");
-	let built_payload = CustomPlatform::build_payload(payload, &state_provider)
+	// build payload
+	let built_payload = payload
+		.build_payload()
 		.expect("payload should be built successfully");
 
 	println!("{built_payload:#?}");

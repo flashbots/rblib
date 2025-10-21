@@ -27,7 +27,7 @@ use {
 fn main() -> eyre::Result<()> {
 	// This is the entry point of the payload building API. We construct a
 	// building context for a given block and attributes.
-	let (block, _) = BlockContext::<Optimism>::mocked();
+	let block = BlockContext::<Optimism>::mocked();
 
 	// Next we progressively build the payload by creating checkpoints that have
 	// state mutations applied to them.
