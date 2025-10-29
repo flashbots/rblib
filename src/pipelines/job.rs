@@ -34,7 +34,7 @@ use {
 /// [`PayloadJob::resolve_kind`] is called with [`PayloadKind::Earliest`].
 ///
 /// This job will automatically terminate after a deadline even `resolve_kind`
-/// is noy called.
+/// is not called.
 pub(super) struct PayloadJob<P, Provider>
 where
 	P: Platform,
