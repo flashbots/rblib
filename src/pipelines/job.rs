@@ -37,9 +37,8 @@ use {
 /// resolved. The job future must resolve within 1 second from the moment
 /// [`PayloadJob::resolve_kind`] is called with [`PayloadKind::Earliest`].
 ///
-/// Following Ethereum spec, this job will automatically terminate after a
-/// deadline (default: SLOT_DURATION = 12 seconds) even if GetPayload is never
-/// called.
+/// This job will automatically terminate after a deadline even if GetPayload is
+/// never called.
 pub(super) struct PayloadJob<P, Provider>
 where
 	P: Platform,
@@ -47,8 +46,7 @@ where
 {
 	block: BlockContext<P>,
 	fut: ExecutorFuture<P, Provider>,
-	/// Deadline for this job. When reached, the job will complete even if
-	/// GetPayload was never called. This prevents accumulation of stale jobs.
+	/// The deadline when this job should resolve.
 	deadline: Pin<Box<Sleep>>,
 }
 
@@ -73,8 +71,8 @@ where
 			Arc::clone(service),
 		));
 
-		// Following Ethereum spec: jobs should complete within SLOT_DURATION (12s)
-		// even if GetPayload is never called. This prevents job accumulation.
+		// Job should complete within deadline (12s) even if GetPayload is never
+		// called. This prevents job accumulation.
 		let deadline =
 			Box::pin(tokio::time::sleep(service.node_config().builder.deadline));
 
