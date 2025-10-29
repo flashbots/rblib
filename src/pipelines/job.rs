@@ -17,7 +17,12 @@ use {
 		node::builder::{BlockBody, BuiltPayload},
 		payload::builder::{PayloadJob as RethPayloadJobTrait, *},
 	},
-	std::{fmt::Write as _, sync::Arc, time::Instant},
+	std::{
+		fmt::Write as _,
+		sync::Arc,
+		time::{Duration, Instant},
+	},
+	tokio::time::Sleep,
 	tracing::{debug, warn},
 };
 
@@ -31,6 +36,10 @@ use {
 /// This is a long-running job that will be polled by the CL node until it is
 /// resolved. The job future must resolve within 1 second from the moment
 /// [`PayloadJob::resolve_kind`] is called with [`PayloadKind::Earliest`].
+///
+/// Following Ethereum spec, this job will automatically terminate after a
+/// deadline (default: SLOT_DURATION = 12 seconds) even if GetPayload is never
+/// called.
 pub(super) struct PayloadJob<P, Provider>
 where
 	P: Platform,
@@ -38,6 +47,9 @@ where
 {
 	block: BlockContext<P>,
 	fut: ExecutorFuture<P, Provider>,
+	/// Deadline for this job. When reached, the job will complete even if
+	/// GetPayload was never called. This prevents accumulation of stale jobs.
+	deadline: Pin<Box<Sleep>>,
 }
 
 impl<P, Provider> PayloadJob<P, Provider>
@@ -61,7 +73,16 @@ where
 			Arc::clone(service),
 		));
 
-		Self { block, fut }
+		// Following Ethereum spec: jobs should complete within SLOT_DURATION (12s)
+		// even if GetPayload is never called. This prevents job accumulation.
+		let deadline =
+			Box::pin(tokio::time::sleep(service.node_config().builder.deadline));
+
+		Self {
+			block,
+			fut,
+			deadline,
+		}
 	}
 }
 
@@ -119,6 +140,19 @@ where
 	type Output = Result<(), PayloadBuilderError>;
 
 	fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+		let this = self.get_mut();
+
+		// Check if deadline has been reached
+		// Jobs should complete after deadline even if
+		// GetPayload is never called
+		if this.deadline.as_mut().poll(cx).is_ready() {
+			debug!(
+				"payload building job {} deadline is reached",
+				this.block.payload_id(),
+			);
+			return Poll::Ready(Ok(()));
+		}
+
 		// When the payload job future is polled, we begin executing the pipeline
 		// production future immediately as well, so that the time between the
 		// creation of the job and the call to `resolve_kind` is utilized for the
@@ -130,12 +164,12 @@ where
 		// At this point we don't return the result of the pipeline execution, but
 		// we want to ensure that any errors that occur during the pipeline
 		// execution are propagated and stop they payload job future immediately.
-		if let Poll::Ready(Err(e)) = self.get_mut().fut.poll_unpin(cx) {
+		if let Poll::Ready(Err(e)) = this.fut.poll_unpin(cx) {
 			return Poll::Ready(Err(e));
 		}
 
 		// On happy paths or in-progress pipelines, keep the future alive. Reth
-		// will drop it when a payload is resolved.
+		// will drop it when a payload is resolved or deadline is reached.
 		Poll::Pending
 	}
 }
