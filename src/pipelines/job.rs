@@ -69,6 +69,8 @@ where
 
 		// Job should complete within deadline (12s) even if GetPayload is never
 		// called. This prevents job accumulation.
+		// TODO: when FCU update avalanche is fixed we could replace
+		// builder.deadline with payload.attributes.timeout
 		let deadline =
 			Box::pin(tokio::time::sleep(service.node_config().builder.deadline));
 
