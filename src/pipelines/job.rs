@@ -20,7 +20,7 @@ use {
 	std::{
 		fmt::Write as _,
 		sync::Arc,
-		time::{Duration, Instant},
+		time::Instant,
 	},
 	tokio::time::Sleep,
 	tracing::{debug, warn},
@@ -37,8 +37,7 @@ use {
 /// resolved. The job future must resolve within 1 second from the moment
 /// [`PayloadJob::resolve_kind`] is called with [`PayloadKind::Earliest`].
 ///
-/// This job will automatically terminate after a deadline even if GetPayload is
-/// never called.
+/// This job will automatically terminate after a deadline even `resolve_kind` is noy called.
 pub(super) struct PayloadJob<P, Provider>
 where
 	P: Platform,
