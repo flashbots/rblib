@@ -55,7 +55,9 @@ type WrappedSetupFn<P: Platform> = Box<
 	dyn Fn(
 		&Arc<dyn Any + Send + Sync>,
 		InitContext<P>,
-	) -> Result<(), PayloadBuilderError>,
+	) -> Pin<
+		Box<dyn Future<Output = Result<(), PayloadBuilderError>> + Send>,
+	>,
 >;
 
 /// Wraps a step in a type-erased manner, allowing it to be stored in a
@@ -121,7 +123,9 @@ impl<P: Platform> StepInstance<P> {
 			setup_fn: Box::new(
 				|step: &Arc<dyn Any + Send + Sync>,
 				 ctx: InitContext<P>|
-				 -> Result<(), PayloadBuilderError> {
+				 -> Pin<
+					Box<dyn Future<Output = Result<(), PayloadBuilderError>> + Send>,
+				> {
 					let step = step.downcast_ref::<S>().expect("Invalid step type");
 
 					// SAFETY: `Step::setup` is called only once per pipeline inside
@@ -136,7 +140,7 @@ impl<P: Platform> StepInstance<P> {
 						&mut *mut_ptr
 					};
 
-					step.setup(ctx)
+					step.setup(ctx).boxed()
 				},
 			) as WrappedSetupFn<P>,
 			name: Name::new::<S, P>(),
@@ -261,11 +265,11 @@ impl<P: Platform> StepInstance<P> {
 
 	/// This is invoked exactly once when a pipeline is instantiated as a payload
 	/// builder service.
-	pub(crate) fn setup(
+	pub(crate) async fn setup(
 		&self,
 		ctx: InitContext<P>,
 	) -> Result<(), PayloadBuilderError> {
-		(self.setup_fn)(&self.instance, ctx)
+		(self.setup_fn)(&self.instance, ctx).await
 	}
 
 	/// Returns the name of the type that implements this step.

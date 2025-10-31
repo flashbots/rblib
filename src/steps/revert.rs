@@ -26,7 +26,10 @@ impl<P: Platform> Step<P> for RemoveRevertedTransactions {
 	/// instantiated into a payload builder service.
 	///
 	/// Initializes metrics for this step.
-	fn setup(&mut self, init: InitContext<P>) -> Result<(), PayloadBuilderError> {
+	async fn setup(
+		&mut self,
+		init: InitContext<P>,
+	) -> Result<(), PayloadBuilderError> {
 		self.metrics = Metrics::with_scope(init.metrics_scope());
 		Ok(())
 	}

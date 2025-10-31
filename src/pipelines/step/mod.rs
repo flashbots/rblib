@@ -78,8 +78,11 @@ pub trait Step<P: Platform>: Send + Sync + 'static {
 
 	/// Optional setup function called exactly once when a pipeline is
 	/// instantiated as a payload builder service, before any payload jobs run.
-	fn setup(&mut self, _: InitContext<P>) -> Result<(), PayloadBuilderError> {
-		Ok(())
+	fn setup(
+		&mut self,
+		_: InitContext<P>,
+	) -> impl Future<Output = Result<(), PayloadBuilderError>> + Send + Sync {
+		async { Ok(()) }
 	}
 }
 

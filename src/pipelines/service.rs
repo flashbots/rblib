@@ -79,7 +79,7 @@ where
 			navi.instance().init_metrics(&metrics_scope);
 
 			let init_ctx = InitContext::new(Arc::clone(&provider), metrics_scope);
-			navi.instance().setup(init_ctx)?;
+			navi.instance().setup(init_ctx).await?;
 		}
 
 		let (service, builder) = PayloadBuilderService::new(
