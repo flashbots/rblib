@@ -332,12 +332,11 @@ impl<P: Platform> CheckpointExt<P> for Checkpoint<P> {
 mod tests {
 	use {
 		crate::{
-			alloy::primitives::Address,
+			alloy::primitives::{Address, U256},
 			payload::{Checkpoint, CheckpointExt},
 			prelude::{BlockContext, Ethereum},
 			test_utils::{BlockContextMocked, FundedAccounts, transfer_tx},
 		},
-		alloy_origin::primitives::U256,
 		std::{
 			thread,
 			time::{Duration, Instant},
@@ -346,7 +345,7 @@ mod tests {
 
 	#[test]
 	fn test_new_at_block() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 		let cp = Checkpoint::new_at_block(block);
 
 		let cp2 = cp.barrier();
@@ -402,11 +401,11 @@ mod tests {
 
 	#[test]
 	fn test_contains_is_false_without_txs() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 		let cp1 = Checkpoint::new_at_block(block);
 
 		let tx1 = transfer_tx(&FundedAccounts::signer(0), 0, U256::from(50_000u64));
-		let tx1_hash = tx1.hash().clone();
+		let tx1_hash = *tx1.hash();
 		assert!(!cp1.contains(tx1_hash));
 		let cp2 = cp1.apply(tx1).unwrap();
 
@@ -415,7 +414,7 @@ mod tests {
 
 	#[test]
 	fn test_history_timestamps() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 		let cp1 = Checkpoint::new_at_block(block);
 
 		thread::sleep(Duration::from_millis(5));
@@ -428,7 +427,7 @@ mod tests {
 
 	#[test]
 	fn test_to_self() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 		let cp = Checkpoint::new_at_block(block);
 
 		// to(self, self) should produce a span of length 1 containing the
@@ -440,8 +439,8 @@ mod tests {
 
 	#[test]
 	fn test_to_non_linear_error() {
-		let (block_a, _) = BlockContext::<Ethereum>::mocked();
-		let (block_b, _) = BlockContext::<Ethereum>::mocked();
+		let block_a = BlockContext::<Ethereum>::mocked();
+		let block_b = BlockContext::<Ethereum>::mocked();
 
 		let cp_a = Checkpoint::new_at_block(block_a);
 		let cp_b = Checkpoint::new_at_block(block_b);
@@ -453,7 +452,7 @@ mod tests {
 
 	#[test]
 	fn test_to_includes_all_intermediates_and_is_linear() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 		let base = Checkpoint::new_at_block(block);
 
 		// base -> x -> y
@@ -482,8 +481,8 @@ mod tests {
 
 	#[test]
 	fn test_to_different_roots_error() {
-		let (block1, _) = BlockContext::<Ethereum>::mocked();
-		let (block2, _) = BlockContext::<Ethereum>::mocked();
+		let block1 = BlockContext::<Ethereum>::mocked();
+		let block2 = BlockContext::<Ethereum>::mocked();
 
 		let root1 = Checkpoint::new_at_block(block1);
 		let root2 = Checkpoint::new_at_block(block2);
@@ -497,7 +496,7 @@ mod tests {
 
 	#[test]
 	fn test_effective_tip_checkpoint() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 		let cp = Checkpoint::new_at_block(block);
 		assert_eq!(
 			cp.effective_tip_per_gas(),
@@ -514,7 +513,7 @@ mod tests {
 
 	#[test]
 	fn test_history_staging_no_barrier() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 		let base = Checkpoint::new_at_block(block);
 
 		let tx1 = transfer_tx(&FundedAccounts::signer(0), 0, U256::from(50u64));
@@ -535,7 +534,7 @@ mod tests {
 
 	#[test]
 	fn test_history_staging_with_barrier() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 		let base = Checkpoint::new_at_block(block);
 
 		let tx1 = transfer_tx(&FundedAccounts::signer(0), 0, U256::from(50u64));
@@ -557,7 +556,7 @@ mod tests {
 
 		// Sealed should include everything up to and including the barrier
 		assert!(
-			sealed.len() > 0,
+			!sealed.is_empty(),
 			"Sealed should include checkpoints up to barrier"
 		);
 	}

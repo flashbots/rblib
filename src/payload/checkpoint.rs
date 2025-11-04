@@ -550,15 +550,17 @@ impl<P: Platform> Display for Checkpoint<P> {
 #[cfg(test)]
 mod tests {
 	use {
-		crate::test_utils::{FundedAccounts, transfer_tx},
-		alloy_origin::primitives::U256,
-		rblib::{prelude::*, test_utils::BlockContextMocked},
+		crate::{
+			alloy::primitives::U256,
+			prelude::{BlockContext, Ethereum},
+			test_utils::{BlockContextMocked, FundedAccounts, transfer_tx},
+		},
 		std::time::Instant,
 	};
 
 	#[test]
 	fn test_barrier_depth_and_is_barrier() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 
 		let checkpoint = block.start();
 
@@ -575,23 +577,21 @@ mod tests {
 		// 2. create named barrier on top
 		// 3. verify new depth is 1, prev is initial, and is_named_barrier returns
 		//    true
-		let root = {
-			let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 
-			let cp = block.start();
-			cp
-		};
+		let root = block.start();
 
-		let named = root.named_barrier("sequencer-synced");
+		let named = root.barrier_with_tag("sequencer-synced");
+
 		assert_eq!(named.depth(), root.depth() + 1);
-		assert!(named.is_named_barrier("sequencer-synced"));
-		assert!(matches!(named.prev(), Some(_)));
+		assert_eq!(named.tag(), Some("sequencer-synced"));
+		assert!(named.prev().is_some());
 		assert_eq!(named.prev().unwrap().depth(), root.depth());
 	}
 
 	#[test]
 	fn test_created_at() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 
 		let before = Instant::now();
 		let cp = block.start();
@@ -601,7 +601,7 @@ mod tests {
 
 	#[test]
 	fn test_iter() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 
 		let checkpoint = block.start();
 

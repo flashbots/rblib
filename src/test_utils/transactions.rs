@@ -12,6 +12,8 @@ use {
 		rpc::types::TransactionRequest,
 	},
 };
+
+#[allow(clippy::missing_panics_doc)]
 pub fn transfer_tx(
 	signer: &PrivateKeySigner,
 	nonce: u64,
