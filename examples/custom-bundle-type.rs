@@ -25,7 +25,7 @@ use {
 	std::sync::Arc,
 };
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 struct CustomPlatform;
 
 impl Platform for CustomPlatform {
@@ -124,7 +124,7 @@ fn main() -> eyre::Result<()> {
 
 /// This custom bundle type allows users to define the minimum coinbase profit
 /// this bundle generates for it to be considered valid.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 struct CustomBundleType {
 	pub txs: Vec<Recovered<types::Transaction<Optimism>>>,
 	pub reverting_txs: Vec<TxHash>,

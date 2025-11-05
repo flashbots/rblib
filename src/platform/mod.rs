@@ -44,6 +44,7 @@ pub trait Platform:
 	Sized
 	+ Default
 	+ Clone
+	+ PartialEq
 	+ Serialize
 	+ DeserializeOwned
 	+ core::fmt::Debug

@@ -24,7 +24,7 @@ mod limits;
 pub use limits::OptimismDefaultLimits;
 
 /// Platform definition for Optimism Rollup chains.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Optimism;
 
 impl Platform for Optimism {

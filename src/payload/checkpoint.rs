@@ -294,6 +294,7 @@ impl<P: Platform> IntoIterator for &Checkpoint<P> {
 
 /// Describes the type of state mutation that was applied to the previous
 /// checkpoint to create this checkpoint.
+#[derive(Debug, PartialEq)]
 enum Mutation<P: Platform> {
 	/// A checkpoint that indicates that any prior checkpoints are immutable and
 	/// should not be discarded or reordered. An example of this would be placing

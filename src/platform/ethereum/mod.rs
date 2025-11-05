@@ -62,7 +62,7 @@ mod limits;
 mod pool;
 
 /// Platform definition for ethereum mainnet.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Ethereum;
 
 impl Platform for Ethereum {

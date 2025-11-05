@@ -24,7 +24,7 @@ use {
 /// Default bundle type used by both `Ethereum` and `Optimism` platforms.
 ///
 /// [`eth_sendBundle`]: https://docs.flashbots.net/flashbots-auction/searchers/advanced/rpc-endpoint#eth_sendbundle
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FlashbotsBundle<P: Platform> {
 	inner: EthSendBundle,
 	recovered: Vec<Recovered<types::Transaction<P>>>,

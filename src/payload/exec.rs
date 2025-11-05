@@ -53,7 +53,7 @@ pub enum ExecutionError<P: Platform> {
 
 /// Describes an atomic unit of execution that can be used to create a state
 /// transition checkpoint.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Executable<P: Platform> {
 	// Individual transaction
 	Transaction(Recovered<types::Transaction<P>>),
@@ -372,7 +372,7 @@ impl<P: PlatformWithRpcTypes> IntoExecutable<P, Variant<7>>
 ///
 /// Types implementing this trait provide access to the individual results of
 /// transaction executions that make up this overall result.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExecutionResult<P: Platform> {
 	/// The executable used to produce this result.
 	source: Executable<P>,

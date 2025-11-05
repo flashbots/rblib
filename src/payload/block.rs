@@ -45,6 +45,12 @@ impl<P: Platform> Clone for BlockContext<P> {
 	}
 }
 
+impl<P: Platform> PartialEq for BlockContext<P> {
+	fn eq(&self, other: &Self) -> bool {
+		Arc::ptr_eq(&self.inner, &other.inner)
+	}
+}
+
 /// Constructors
 impl<P: Platform> BlockContext<P> {
 	/// To create a new [`BlockContext`], we need:

@@ -29,7 +29,7 @@ pub use ext::BundleExt;
 ///
 /// [`eth_sendBundle`]: https://docs.flashbots.net/flashbots-auction/searchers/advanced/rpc-endpoint#eth_sendbundle
 pub trait Bundle<P: Platform>:
-	Serialize + DeserializeOwned + Clone + Debug + Send + Sync + 'static
+	Serialize + DeserializeOwned + Clone + PartialEq + Debug + Send + Sync + 'static
 {
 	type PostExecutionError: core::error::Error + Send + Sync + 'static;
 
