@@ -24,7 +24,7 @@ use {
 /// Default bundle type used by both `Ethereum` and `Optimism` platforms.
 ///
 /// [`eth_sendBundle`]: https://docs.flashbots.net/flashbots-auction/searchers/advanced/rpc-endpoint#eth_sendbundle
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct FlashbotsBundle<P: Platform> {
 	inner: EthSendBundle,
 	recovered: Vec<Recovered<types::Transaction<P>>>,
@@ -235,6 +235,13 @@ impl<P: Platform> FlashbotsBundle<P> {
 		// - min_timestamp < timestamp < max_timestamp
 		// - block_number == number
 		Eligibility::Eligible
+	}
+}
+
+/// `PartialEq` by bundle hash
+impl<P: Platform> PartialEq for FlashbotsBundle<P> {
+	fn eq(&self, other: &Self) -> bool {
+		self.hash() == other.hash()
 	}
 }
 

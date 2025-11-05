@@ -124,7 +124,7 @@ fn main() -> eyre::Result<()> {
 
 /// This custom bundle type allows users to define the minimum coinbase profit
 /// this bundle generates for it to be considered valid.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct CustomBundleType {
 	pub txs: Vec<Recovered<types::Transaction<Optimism>>>,
 	pub reverting_txs: Vec<TxHash>,
@@ -278,6 +278,12 @@ fn transfer_tx(
 
 	OpTransactionSigned::new_unhashed(tx, sig) //
 		.with_signer(signer.address())
+}
+
+impl PartialEq for CustomBundleType {
+	fn eq(&self, other: &Self) -> bool {
+		self.hash() == other.hash()
+	}
 }
 
 #[derive(Debug)]
