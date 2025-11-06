@@ -425,7 +425,7 @@ impl<P: Platform> DatabaseRef for Checkpoint<P> {
 		address: Address,
 		index: StorageKey,
 	) -> Result<StorageValue, Self::Error> {
-		// traverse checkpoints history looking for the first checkpoint that
+		// traverse checkpoint history looking for the first checkpoint that
 		// has touched the given address.
 
 		if let Some(value) = self.iter().find_map(|checkpoint| {
@@ -615,19 +615,30 @@ mod tests {
 	}
 
 	#[test]
+	fn test_apply_barrier() {
+		let block = BlockContext::<Ethereum>::mocked();
+		let root = block.start();
+		let barrier = root.barrier();
+
+		assert!(barrier.result().is_none());
+		assert!(barrier.state().is_none());
+		assert!(barrier.as_transaction().is_none());
+		assert!(barrier.as_bundle().is_none());
+		assert!(barrier.transactions().is_empty());
+	}
+
+	#[test]
 	fn test_apply_tx() {
 		// test the checkpoint obtained by application with `Checkpoint::apply`
 		let block = BlockContext::<Ethereum>::mocked();
 		let root = block.start();
-		assert!(root.result().is_none());
-		assert!(root.state().is_none());
-		assert!(root.as_transaction().is_none());
-		assert!(root.transactions().is_empty());
 
 		let tx = test_tx::<Ethereum>(0, 0);
 		let checkpoint = root.apply(tx.clone()).unwrap();
 		assert_eq!(checkpoint.as_transaction(), Some(&tx));
 		assert_eq!(checkpoint.transactions(), std::slice::from_ref(&tx));
+		assert!(checkpoint.as_bundle().is_none());
+		assert!(!checkpoint.is_barrier());
 
 		// expected mutation result
 		let res = tx
@@ -654,12 +665,13 @@ mod tests {
 	fn test_apply_bundle() {
 		let block = BlockContext::<Ethereum>::mocked();
 		let root = block.start();
-		assert!(root.as_bundle().is_none());
 
 		let (bundle, txs) = test_bundle::<Ethereum>(0, 0);
 		let checkpoint = root.apply(bundle.clone()).unwrap();
 		assert_eq!(checkpoint.as_bundle(), Some(&bundle));
 		assert_eq!(checkpoint.transactions(), txs.as_slice());
+		assert!(checkpoint.as_transaction().is_none());
+		assert!(!checkpoint.is_barrier());
 
 		// expected mutation result
 		let res = bundle
