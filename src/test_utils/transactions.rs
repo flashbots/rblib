@@ -11,13 +11,41 @@ use {
 	test_utils::FundedAccounts,
 };
 
-/// A mock tx to easily get a valid tx from `FundedAccounts` with `key` and
-/// `nonce`
-pub fn mock_tx<P: PlatformWithRpcTypes>(
+/// A tx from `FundedAccounts` with `key` and `nonce`
+/// Will create a transfer tx with value 1
+pub fn test_tx<P: PlatformWithRpcTypes>(
 	key: u32,
 	nonce: u64,
 ) -> Recovered<types::Transaction<P>> {
-	transfer_tx::<P>(&FundedAccounts::signer(key), nonce, U256::from(10u64))
+	transfer_tx::<P>(&FundedAccounts::signer(key), nonce, U256::from(1u64))
+}
+
+/// `count` txs from `FundedAccounts` with `key` and `initial_nonce`
+/// Will consume `count` nonce for `key`
+pub fn test_txs<P: PlatformWithRpcTypes>(
+	key: u32,
+	initial_nonce: u64,
+	count: u64,
+) -> Vec<Recovered<types::Transaction<P>>> {
+	(initial_nonce..initial_nonce + count)
+		.map(|nonce| test_tx::<P>(key, nonce))
+		.collect()
+}
+
+/// A mock `FlashbotsBundle` from `FundedAccounts` with `key` and `nonce`
+/// Will insert 3 txs using [`test_tx`] and consume 3 nonces for `key`
+pub fn test_bundle<P: PlatformWithRpcTypes<Bundle = FlashbotsBundle<P>>>(
+	key: u32,
+	nonce: u64,
+) -> (FlashbotsBundle<P>, Vec<Recovered<types::Transaction<P>>>) {
+	let txs = test_txs::<P>(key, nonce, 3);
+	(
+		FlashbotsBundle::<P>::default()
+			.with_transaction(txs[0].clone())
+			.with_transaction(txs[1].clone())
+			.with_transaction(txs[2].clone()),
+		txs,
+	)
 }
 
 #[allow(clippy::missing_panics_doc)]

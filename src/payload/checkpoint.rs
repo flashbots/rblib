@@ -476,6 +476,7 @@ impl<P: Platform> PartialEq for Checkpoint<P> {
 		Arc::ptr_eq(&self.inner, &other.inner)
 	}
 }
+
 impl<P: Platform> Eq for Checkpoint<P> {}
 
 impl<P: Platform> Debug for Checkpoint<P> {
@@ -552,76 +553,187 @@ impl<P: Platform> Display for Checkpoint<P> {
 mod tests {
 	use {
 		crate::{
-			alloy::primitives::U256,
-			prelude::{BlockContext, Ethereum},
-			test_utils::{BlockContextMocked, FundedAccounts, transfer_tx},
+			payload::checkpoint::{Checkpoint, IntoExecutable, Mutation},
+			prelude::*,
+			reth::primitives::Recovered,
+			test_utils::{BlockContextMocked, test_bundle, test_tx, test_txs},
 		},
 		std::time::Instant,
 	};
 
-	#[test]
-	fn test_barrier_depth_and_is_barrier() {
-		let block = BlockContext::<Ethereum>::mocked();
+	/// Helper test function to apply multiple transactions on a checkpoint
+	fn apply_multiple<P: PlatformWithRpcTypes>(
+		root: Checkpoint<P>,
+		txs: &[Recovered<types::Transaction<P>>],
+	) -> Vec<Checkpoint<P>> {
+		let mut cur = root;
+		txs
+			.iter()
+			.map(|tx| {
+				cur = cur.apply(tx.clone()).unwrap();
+				cur.clone()
+			})
+			.collect()
+	}
 
-		let checkpoint = block.start();
+	mod internal {
+		use super::*;
+		#[test]
+		fn test_new_at_block() {
+			// test the initial checkpoint with private `Checkpoint::new_at_block`
+			let block = BlockContext::<Ethereum>::mocked();
 
-		// Expected: initial checkpoint is depth 0 and is barrier
-		assert_eq!(checkpoint.depth(), 0);
-		assert!(checkpoint.is_barrier());
-		assert!(checkpoint.prev().is_none());
+			let before = Instant::now();
+			let checkpoint = Checkpoint::new_at_block(block.clone());
+			let after = Instant::now();
+
+			assert_eq!(checkpoint.block(), &block);
+			assert!(checkpoint.prev().is_none());
+			assert_eq!(checkpoint.depth(), 0);
+			assert!(checkpoint.is_barrier());
+			assert!((before..=after).contains(&checkpoint.created_at()));
+		}
+
+		#[test]
+		fn test_apply_with() {
+			// test the checkpoint obtained by application with private
+			// `Checkpoint::apply_with`
+			let block = BlockContext::<Ethereum>::mocked();
+			let root = block.start();
+
+			let before = Instant::now();
+			let checkpoint = root.apply_with(Mutation::Barrier, None);
+			let after = Instant::now();
+
+			assert_eq!(checkpoint.block(), &block);
+			assert_eq!(checkpoint.prev(), Some(root.clone()));
+			assert_eq!(checkpoint.depth(), root.depth() + 1);
+			assert!(checkpoint.is_barrier());
+			assert!(checkpoint.tag().is_none());
+			assert!((before..=after).contains(&checkpoint.created_at()));
+		}
 	}
 
 	#[test]
-	fn test_named_barrier_and_prev_depth() {
-		// Outline:
-		// 1. create initial checkpoint (depth 0)
-		// 2. create named barrier on top
-		// 3. verify new depth is 1, prev is initial, and is_named_barrier returns
-		//    true
+	fn test_apply_tx() {
+		// test the checkpoint obtained by application with `Checkpoint::apply`
 		let block = BlockContext::<Ethereum>::mocked();
-
 		let root = block.start();
+		assert!(root.result().is_none());
+		assert!(root.state().is_none());
+		assert!(root.as_transaction().is_none());
+		assert!(root.transactions().is_empty());
 
-		let named = root.barrier_with_tag("sequencer-synced");
+		let tx = test_tx::<Ethereum>(0, 0);
+		let checkpoint = root.apply(tx.clone()).unwrap();
+		assert_eq!(checkpoint.as_transaction(), Some(&tx));
+		assert_eq!(checkpoint.transactions(), std::slice::from_ref(&tx));
 
-		assert_eq!(named.depth(), root.depth() + 1);
-		assert_eq!(named.tag(), Some("sequencer-synced"));
-		assert!(named.prev().is_some());
-		assert_eq!(named.prev().unwrap().depth(), root.depth());
+		// expected mutation result
+		let res = tx
+			.try_into_executable()
+			.unwrap()
+			.execute(&block, &root)
+			.unwrap();
+		assert_eq!(checkpoint.result(), Some(&res));
+		assert_eq!(checkpoint.state(), Some(res.state()));
+		assert_eq!(checkpoint.transactions(), res.transactions());
+		assert_eq!(checkpoint.inner.mutation, Mutation::Executable(res));
+
+		let tx = test_tx::<Ethereum>(0, 1);
+		let checkpoint = checkpoint.apply(tx.clone()).unwrap();
+		assert_eq!(checkpoint.depth(), 2);
+
+		// This tx is supposed to fail
+		let fail_tx = tx;
+		let checkpoint_res = checkpoint.apply(fail_tx);
+		assert!(checkpoint_res.is_err());
 	}
 
 	#[test]
-	fn test_created_at() {
+	fn test_apply_bundle() {
 		let block = BlockContext::<Ethereum>::mocked();
+		let root = block.start();
+		assert!(root.as_bundle().is_none());
 
-		let before = Instant::now();
-		let cp = block.start();
-		let after = Instant::now();
-		assert!((before..=after).contains(&cp.created_at()));
+		let (bundle, txs) = test_bundle::<Ethereum>(0, 0);
+		let checkpoint = root.apply(bundle.clone()).unwrap();
+		assert_eq!(checkpoint.as_bundle(), Some(&bundle));
+		assert_eq!(checkpoint.transactions(), txs.as_slice());
+
+		// expected mutation result
+		let res = bundle
+			.try_into_executable()
+			.unwrap()
+			.execute(&block, &root)
+			.unwrap();
+		assert_eq!(checkpoint.result(), Some(&res));
+		assert_eq!(checkpoint.state(), Some(res.state()));
+		assert_eq!(checkpoint.transactions(), res.transactions());
+		assert_eq!(checkpoint.inner.mutation, Mutation::Executable(res));
+
+		let (bundle, _) = test_bundle::<Ethereum>(0, 3);
+		let checkpoint = checkpoint.apply(bundle.clone()).unwrap();
+		assert_eq!(checkpoint.depth(), 2);
+
+		// This bundle is supposed to fail
+		let fail_bundle = bundle;
+		let checkpoint_res = checkpoint.apply(fail_bundle);
+		assert!(checkpoint_res.is_err());
+	}
+
+	#[test]
+	fn test_apply_with_tag() {
+		let tag = "tagged";
+		let block = BlockContext::<Ethereum>::mocked();
+		let root = block.start();
+		assert!(root.tag().is_none());
+		assert!(!root.is_tagged("x"));
+
+		let checkpoint = root.barrier_with_tag(tag);
+		assert!(checkpoint.is_tagged(tag));
+		assert_eq!(checkpoint.tag(), Some(tag));
+
+		let checkpoint =
+			root.apply_with_tag(test_tx::<Ethereum>(0, 0), tag).unwrap();
+		assert_eq!(checkpoint.tag(), Some(tag));
 	}
 
 	#[test]
 	fn test_iter() {
 		let block = BlockContext::<Ethereum>::mocked();
+		let root = block.start();
 
-		let checkpoint = block.start();
+		let txs = test_txs::<Ethereum>(0, 0, 10);
+		let checkpoints = apply_multiple(root, &txs);
 
-		let checkpoint2 = checkpoint.barrier();
-		let checkpoint3 = checkpoint2.barrier();
+		let latest = checkpoints.last().unwrap();
+		let iter = latest.into_iter();
 
-		let tx =
-			transfer_tx::<Ethereum>(&FundedAccounts::signer(0), 0, U256::from(10u64));
-		let checkpoint4 = checkpoint3.apply(tx).unwrap();
+		assert!(
+			checkpoints
+				.into_iter()
+				.rev()
+				.zip(iter)
+				.all(|(expected_cp, cp)| expected_cp == cp)
+		);
+	}
 
-		let history: Vec<_> = checkpoint4.into_iter().collect();
-		assert_eq!(history.len(), 4);
-		assert_eq!(history[0], checkpoint4);
-		assert_eq!(history[0].depth(), 3);
-		assert_eq!(history[1], checkpoint3);
-		assert_eq!(history[1].depth(), 2);
-		assert_eq!(history[2], checkpoint2);
-		assert_eq!(history[2].depth(), 1);
-		assert_eq!(history[3], checkpoint);
-		assert_eq!(history[3].depth(), 0);
+	#[test]
+	fn test_checkpoint_to_txs() {
+		let block = BlockContext::<Ethereum>::mocked();
+		let root = block.start();
+		let txs = test_txs::<Ethereum>(0, 0, 10);
+		let checkpoint = apply_multiple(root, &txs).last().unwrap().to_owned();
+
+		let extracted_txs = Vec::<types::Transaction<Ethereum>>::from(checkpoint);
+
+		assert!(
+			txs
+				.into_iter()
+				.map(|tx| tx.inner().clone())
+				.zip(extracted_txs)
+				.all(|(expected_tx, tx)| expected_tx == tx)
+		);
 	}
 }
