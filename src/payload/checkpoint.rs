@@ -748,4 +748,20 @@ mod tests {
 				.all(|(expected_tx, tx)| expected_tx == tx)
 		);
 	}
+
+	#[test]
+	fn test_build_payload() {
+		let block = BlockContext::<Ethereum>::mocked();
+		let provider = block.base_state();
+
+		let root = block.start();
+		let txs = test_txs::<Ethereum>(0, 0, 10);
+		let checkpoint = apply_multiple(root, &txs).last().unwrap().to_owned();
+
+		let built_payload = checkpoint.build_payload().unwrap();
+		let payload = Ethereum::build_payload(checkpoint, provider).unwrap();
+
+		assert_eq!(built_payload.id(), payload.id());
+		assert_eq!(built_payload.block(), payload.block());
+	}
 }

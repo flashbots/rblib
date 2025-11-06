@@ -461,25 +461,25 @@ impl StorageRootProvider for GenesisStateProvider {
 
 impl StateRootProvider for GenesisStateProvider {
 	fn state_root(&self, _hashed_state: HashedPostState) -> ProviderResult<B256> {
-		Ok(B256::random())
+		Ok(keccak256([0]))
 	}
 
 	fn state_root_from_nodes(&self, _input: TrieInput) -> ProviderResult<B256> {
-		Ok(B256::random())
+		Ok(keccak256([0]))
 	}
 
 	fn state_root_with_updates(
 		&self,
 		_hashed_state: HashedPostState,
 	) -> ProviderResult<(B256, TrieUpdates)> {
-		Ok((B256::random(), TrieUpdates::default()))
+		Ok((keccak256([0]), TrieUpdates::default()))
 	}
 
 	fn state_root_from_nodes_with_updates(
 		&self,
 		_input: TrieInput,
 	) -> ProviderResult<(B256, TrieUpdates)> {
-		Ok((B256::random(), TrieUpdates::default()))
+		Ok((keccak256([0]), TrieUpdates::default()))
 	}
 }
 
