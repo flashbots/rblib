@@ -67,6 +67,13 @@ pub struct AppendOrders<P: Platform> {
 	/// Defaults to `true`.
 	break_on_limit: bool,
 
+	/// Custom filters that can reject orders based on arbitrary criteria.
+	/// Each filter is a function that takes the current payload checkpoint and
+	/// an order, and returns true if the order should be included and false if
+	/// it should be skipped.
+	#[expect(clippy::type_complexity)]
+	filters: Vec<Box<dyn Fn(&Checkpoint<P>, &Order<P>) -> bool + Send + Sync>>,
+
 	metrics: Metrics,
 	per_job: PerJobCounters,
 }
@@ -83,6 +90,7 @@ impl<P: Platform> AppendOrders<P> {
 			max_new_bundles: None,
 			max_new_transactions: None,
 			break_on_limit: true,
+			filters: Vec::new(),
 			metrics: Metrics::default(),
 			per_job: PerJobCounters::default(),
 		}
@@ -126,6 +134,16 @@ impl<P: Platform> AppendOrders<P> {
 	#[must_use]
 	pub fn with_ok_on_limit(mut self) -> Self {
 		self.break_on_limit = false;
+		self
+	}
+
+	/// Adds a custom filter that can reject orders based on arbitrary criteria.
+	#[must_use]
+	pub fn with_filter(
+		mut self,
+		filter: impl Fn(&Checkpoint<P>, &Order<P>) -> bool + Send + Sync + 'static,
+	) -> Self {
+		self.filters.push(Box::new(filter));
 		self
 	}
 }
@@ -321,6 +339,14 @@ impl<'a, P: Platform> Run<'a, P> {
 		{
 			// order contains transactions that are already included in the payload.
 			return true;
+		}
+
+		// Check custom filters
+		for filter in &self.step.filters {
+			if !filter(&self.payload, order) {
+				// Custom filter rejected this order
+				return true;
+			}
 		}
 
 		let order_blob_gas = order
