@@ -5,6 +5,7 @@ use {
 	std::sync::Arc,
 };
 
+pub mod composite;
 mod context;
 mod instance;
 mod metrics;
@@ -30,7 +31,7 @@ pub use {context::StepContext, reth::payload::builder::PayloadBuilderError};
 /// can be generic over the platform they run on or specialized for a specific
 /// platform.
 ///
-/// The instance of the step is long-lived, and it's lifetime is equal to the
+/// The instance of the step is long-lived, and its lifetime is equal to the
 /// lifetime of the pipeline it is part of. All invocations of the step will
 /// repeatedly call into the `step` async function on the same instance.
 ///
@@ -45,9 +46,9 @@ pub trait Step<P: Platform>: Send + Sync + 'static {
 	/// failure that will terminate the pipeline execution.
 	fn step(
 		self: Arc<Self>,
-		payload: Checkpoint<P>,
-		ctx: StepContext<P>,
-	) -> impl Future<Output = ControlFlow<P>> + Send + Sync;
+		_payload: Checkpoint<P>,
+		_ctx: StepContext<P>,
+	) -> impl Future<Output = ControlFlow<P>> + Send;
 
 	/// This function is called once per new payload job before any steps are
 	/// executed. It can be used by steps to perform any optional initialization
@@ -57,8 +58,8 @@ pub trait Step<P: Platform>: Send + Sync + 'static {
 	/// terminated immediately and no steps will be executed.
 	fn before_job(
 		self: Arc<Self>,
-		_: StepContext<P>,
-	) -> impl Future<Output = Result<(), PayloadBuilderError>> + Send + Sync {
+		_ctx: StepContext<P>,
+	) -> impl Future<Output = Result<(), PayloadBuilderError>> + Send {
 		async { Ok(()) }
 	}
 
@@ -70,9 +71,9 @@ pub trait Step<P: Platform>: Send + Sync + 'static {
 	/// and will not produce a valid payload.
 	fn after_job(
 		self: Arc<Self>,
-		_: StepContext<P>,
-		_: Arc<Result<types::BuiltPayload<P>, PayloadBuilderError>>,
-	) -> impl Future<Output = Result<(), PayloadBuilderError>> + Send + Sync {
+		_ctx: StepContext<P>,
+		_result: Arc<Result<types::BuiltPayload<P>, PayloadBuilderError>>,
+	) -> impl Future<Output = Result<(), PayloadBuilderError>> + Send {
 		async { Ok(()) }
 	}
 
@@ -80,8 +81,8 @@ pub trait Step<P: Platform>: Send + Sync + 'static {
 	/// instantiated as a payload builder service, before any payload jobs run.
 	fn setup(
 		&mut self,
-		_: InitContext<P>,
-	) -> impl Future<Output = Result<(), PayloadBuilderError>> + Send + Sync {
+		_init: InitContext<P>,
+	) -> impl Future<Output = Result<(), PayloadBuilderError>> + Send {
 		async { Ok(()) }
 	}
 }
@@ -103,10 +104,10 @@ pub enum ControlFlow<P: Platform> {
 	/// Stops the pipeline execution that contains the step with a payload.
 	///
 	/// If the step is inside a `Loop` sub-pipeline, it will stop the loop,
-	/// run its epilogue (if it exists) and progress to next steps in the parent
-	/// pipeline.
+	/// run its epilogue (if it exists) and progress to the next steps in the
+	/// parent pipeline.
 	///
-	/// Breaking out of a prologue step will not invoke any step in the pipeline,
+	/// Breaking out of a prologue step will not invoke any step in the pipeline
 	/// and jump straight to the epilogue.
 	///
 	/// Breaking out of an epilogue has the same effect as returning Ok from it,
@@ -156,6 +157,7 @@ impl<P: Platform> ControlFlow<P> {
 }
 
 /// Context for the optional setup function of a step.
+#[derive(Clone)]
 pub struct InitContext<P: Platform> {
 	metrics_scope: String,
 	provider: Arc<dyn StateProviderFactory>,

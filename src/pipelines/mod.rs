@@ -30,7 +30,14 @@ pub use {
 	Behavior::{Loop, Once},
 	events::system_events::*,
 	limits::*,
-	step::{ControlFlow, InitContext, PayloadBuilderError, Step, StepContext},
+	step::{
+		ControlFlow,
+		InitContext,
+		PayloadBuilderError,
+		Step,
+		StepContext,
+		composite,
+	},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,7 +129,7 @@ impl<P: Platform> Pipeline<P> {
 	/// Sets payload building limits for the pipeline.
 	///
 	/// Here we can either use an instance of `LimitsFactory` that generates
-	/// limits dynamically according to a user-defined logic, or we can use a
+	/// limits dynamically, according to a user-defined logic, or we can use a
 	/// fixed `Limits` instance.
 	#[must_use]
 	pub fn with_limits<T, L: IntoScopedLimits<P, T>>(self, limits: L) -> Self {

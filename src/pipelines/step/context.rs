@@ -11,8 +11,9 @@ use {
 
 /// Carries information specific to the step that is currently being executed.
 ///
-/// An instance of this type is passed to `Step::step` method during pipeline
-/// execution of steps.
+/// An instance of this type is passed to the [`Step::step`] method during the
+/// pipeline execution of steps.
+#[derive(Debug, Clone)]
 pub struct StepContext<P: Platform> {
 	block: BlockContext<P>,
 	limits: Limits,
