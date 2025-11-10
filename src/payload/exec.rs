@@ -639,7 +639,7 @@ mod tests {
 
 		match result.source() {
 			Executable::Transaction(result_tx) => assert_eq!(*result_tx, tx),
-			_ => panic!("Expected transaction source"),
+			Executable::Bundle(_) => panic!("Expected transaction source"),
 		}
 	}
 
@@ -677,7 +677,7 @@ mod tests {
 	fn test_execution_error_invalid_signature_display() {
 		let err =
 			ExecutionError::<Ethereum>::InvalidSignature(RecoveryError::new());
-		let display = format!("{}", err);
+		let display = format!("{err}");
 		assert!(display.contains("Invalid signature"));
 	}
 

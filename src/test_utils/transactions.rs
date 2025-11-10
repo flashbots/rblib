@@ -75,6 +75,7 @@ pub fn transfer_tx<P: PlatformWithRpcTypes>(
 }
 
 /// Create a transaction that will revert when executed
+#[allow(clippy::missing_panics_doc)]
 pub fn reverting_tx<P: PlatformWithRpcTypes>(
 	signer: &PrivateKeySigner,
 	nonce: u64,
@@ -104,6 +105,7 @@ pub fn reverting_tx<P: PlatformWithRpcTypes>(
 
 /// Create a transaction with insufficient gas that will cause an invalid tx
 /// error
+#[allow(clippy::missing_panics_doc)]
 pub fn invalid_tx<P: PlatformWithRpcTypes>(
 	signer: &PrivateKeySigner,
 	nonce: u64,
