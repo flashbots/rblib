@@ -419,3 +419,291 @@ impl<P: Platform> ExecutionResult<P> {
 		self.results.iter().map(|r| r.gas_used()).sum()
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use {
+		super::*,
+		crate::test_utils::{BlockContextMocked, test_bundle, test_tx, test_txs},
+	};
+
+	#[test]
+	fn test_executable_transaction_returns_single_transaction() {
+		let tx = test_tx::<Ethereum>(0, 0);
+		let executable = Executable::<Ethereum>::Transaction(tx.clone());
+
+		assert_eq!(executable.transactions().len(), 1);
+		assert_eq!(executable.transactions()[0], tx);
+		assert!(executable.is_transaction());
+		assert!(!executable.is_bundle());
+	}
+
+	#[test]
+	fn test_executable_bundle_returns_all_transactions() {
+		let (bundle, txs) = test_bundle::<Ethereum>(0, 0);
+		let executable = Executable::<Ethereum>::Bundle(bundle);
+
+		assert_eq!(executable.transactions().len(), 3);
+		assert_eq!(executable.transactions(), txs.as_slice());
+		assert!(!executable.is_transaction());
+		assert!(executable.is_bundle());
+	}
+
+	#[test]
+	fn test_execute_transaction_success() {
+		let block = BlockContext::<Ethereum>::mocked();
+		let checkpoint = block.start();
+		let tx = test_tx::<Ethereum>(0, 0);
+
+		let result =
+			Executable::execute_transaction(tx.clone(), &block, &checkpoint);
+
+		assert!(result.is_ok());
+		let exec_result = result.unwrap();
+		assert_eq!(exec_result.results().len(), 1);
+		assert_eq!(exec_result.transactions().len(), 1);
+		assert_eq!(exec_result.transactions()[0], tx);
+		assert!(exec_result.results()[0].is_success());
+	}
+
+	#[test]
+	fn test_execute_transaction_produces_state_changes() {
+		let block = BlockContext::<Ethereum>::mocked();
+		let checkpoint = block.start();
+		let tx = test_tx::<Ethereum>(0, 0);
+
+		let result = Executable::execute_transaction(tx, &block, &checkpoint);
+
+		assert!(result.is_ok());
+		let exec_result = result.unwrap();
+		assert!(!exec_result.state().is_empty());
+		assert!(exec_result.gas_used() > 0);
+	}
+
+	#[test]
+	fn test_execute_via_execute_method() {
+		let block = BlockContext::<Ethereum>::mocked();
+		let checkpoint = block.start();
+		let tx = test_tx::<Ethereum>(0, 0);
+		let executable = Executable::<Ethereum>::Transaction(tx);
+
+		let result = executable.execute(&block, &checkpoint);
+
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap().results().len(), 1);
+	}
+
+	#[test]
+	fn test_execute_bundle_all_successful() {
+		let block = BlockContext::<Ethereum>::mocked();
+		let checkpoint = block.start();
+		let (bundle, txs) = test_bundle::<Ethereum>(0, 0);
+
+		let result = Executable::execute_bundle(bundle, &block, &checkpoint);
+
+		assert!(result.is_ok());
+		let exec_result = result.unwrap();
+		assert_eq!(exec_result.results().len(), 3);
+		assert!(exec_result.results().iter().all(|r| r.is_success()));
+		assert_eq!(exec_result.transactions().len(), 3);
+		assert_eq!(exec_result.transactions(), txs.as_slice());
+	}
+
+	#[test]
+	fn test_execute_bundle_aggregates_gas() {
+		let block = BlockContext::<Ethereum>::mocked();
+		let checkpoint = block.start();
+		let (bundle, _) = test_bundle::<Ethereum>(0, 0);
+
+		let result = Executable::execute_bundle(bundle, &block, &checkpoint);
+
+		assert!(result.is_ok());
+		let exec_result = result.unwrap();
+		let total_gas = exec_result.gas_used();
+		let sum_gas: u64 = exec_result.results().iter().map(|r| r.gas_used()).sum();
+		assert_eq!(total_gas, sum_gas);
+		assert!(total_gas > 0);
+	}
+
+	#[test]
+	fn test_execute_bundle_sequential_execution() {
+		// Each transaction in a bundle executes on the state from the previous
+		let block = BlockContext::<Ethereum>::mocked();
+		let checkpoint = block.start();
+		// Use same account for all transactions to test sequential nonces
+		let txs = test_txs::<Ethereum>(0, 0, 3);
+		let bundle = FlashbotsBundle::<Ethereum>::default()
+			.with_transaction(txs[0].clone())
+			.with_transaction(txs[1].clone())
+			.with_transaction(txs[2].clone());
+
+		let result = Executable::execute_bundle(bundle, &block, &checkpoint);
+
+		assert!(result.is_ok());
+		let exec_result = result.unwrap();
+		assert_eq!(exec_result.results().len(), 3);
+		assert!(exec_result.results().iter().all(|r| r.is_success()));
+	}
+
+	#[test]
+	fn test_into_executable_from_recovered_transaction() {
+		let tx = test_tx::<Ethereum>(0, 0);
+		let result: Result<Executable<Ethereum>, _> =
+			IntoExecutable::<Ethereum, Variant<2>>::try_into_executable(tx.clone());
+
+		assert!(result.is_ok());
+		let executable = result.unwrap();
+		assert!(executable.is_transaction());
+		assert_eq!(executable.transactions()[0], tx);
+	}
+
+	#[test]
+	fn test_into_executable_from_bundle() {
+		let (bundle, _) = test_bundle::<Ethereum>(0, 0);
+		let result: Result<Executable<Ethereum>, _> =
+			IntoExecutable::<Ethereum, Variant<3>>::try_into_executable(bundle);
+
+		assert!(result.is_ok());
+		assert!(result.unwrap().is_bundle());
+	}
+
+	#[test]
+	fn test_into_executable_from_executable() {
+		let tx = test_tx::<Ethereum>(0, 0);
+		let executable = Executable::<Ethereum>::Transaction(tx);
+		let result: Result<Executable<Ethereum>, _> =
+			IntoExecutable::<Ethereum, Variant<4>>::try_into_executable(
+				executable.clone(),
+			);
+
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), executable);
+	}
+
+	#[test]
+	fn test_into_executable_from_checkpoint() {
+		let block = BlockContext::<Ethereum>::mocked();
+		let checkpoint = block.start();
+		let tx = test_tx::<Ethereum>(0, 0);
+		let checkpoint_with_tx = checkpoint.apply(tx.clone()).unwrap();
+
+		let result: Result<Executable<Ethereum>, _> =
+			IntoExecutable::<Ethereum, Variant<5>>::try_into_executable(
+				checkpoint_with_tx,
+			);
+
+		assert!(result.is_ok());
+		let executable = result.unwrap();
+		assert!(executable.is_transaction());
+		assert_eq!(executable.transactions()[0], tx);
+	}
+
+	#[test]
+	fn test_into_executable_from_checkpoint_ref() {
+		let block = BlockContext::<Ethereum>::mocked();
+		let checkpoint = block.start();
+		let tx = test_tx::<Ethereum>(0, 0);
+		let checkpoint_with_tx = checkpoint.apply(tx.clone()).unwrap();
+
+		let result: Result<Executable<Ethereum>, _> =
+			IntoExecutable::<Ethereum, Variant<6>>::try_into_executable(
+				&checkpoint_with_tx,
+			);
+
+		assert!(result.is_ok());
+		let executable = result.unwrap();
+		assert!(executable.is_transaction());
+		assert_eq!(executable.transactions()[0], tx);
+	}
+
+	#[test]
+	fn test_into_executable_from_barrier_checkpoint_fails() {
+		let block = BlockContext::<Ethereum>::mocked();
+		let checkpoint = block.start();
+		let barrier = checkpoint.barrier();
+
+		let result: Result<Executable<Ethereum>, _> =
+			IntoExecutable::<Ethereum, Variant<6>>::try_into_executable(&barrier);
+
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_execution_result_source() {
+		let block = BlockContext::<Ethereum>::mocked();
+		let checkpoint = block.start();
+		let tx = test_tx::<Ethereum>(0, 0);
+		let executable = Executable::<Ethereum>::Transaction(tx.clone());
+
+		let result = executable.execute(&block, &checkpoint).unwrap();
+
+		match result.source() {
+			Executable::Transaction(result_tx) => assert_eq!(*result_tx, tx),
+			_ => panic!("Expected transaction source"),
+		}
+	}
+
+	#[test]
+	fn test_execution_result_transactions() {
+		let block = BlockContext::<Ethereum>::mocked();
+		let checkpoint = block.start();
+		let (bundle, txs) = test_bundle::<Ethereum>(0, 0);
+		let executable = Executable::<Ethereum>::Bundle(bundle);
+
+		let result = executable.execute(&block, &checkpoint).unwrap();
+
+		assert_eq!(result.transactions(), txs.as_slice());
+	}
+
+	#[test]
+	fn test_executable_hash_transaction() {
+		let tx = test_tx::<Ethereum>(0, 0);
+		let expected_hash = *tx.tx_hash();
+		let executable = Executable::<Ethereum>::Transaction(tx);
+
+		assert_eq!(executable.hash(), expected_hash);
+	}
+
+	#[test]
+	fn test_executable_hash_bundle() {
+		let (bundle, _) = test_bundle::<Ethereum>(0, 0);
+		let expected_hash = bundle.hash();
+		let executable = Executable::<Ethereum>::Bundle(bundle);
+
+		assert_eq!(executable.hash(), expected_hash);
+	}
+
+	#[test]
+	fn test_execution_error_invalid_signature_display() {
+		let err =
+			ExecutionError::<Ethereum>::InvalidSignature(RecoveryError::new());
+		let display = format!("{}", err);
+		assert!(display.contains("Invalid signature"));
+	}
+
+	#[test]
+	fn test_execution_result_state_is_bundle_state() {
+		let block = BlockContext::<Ethereum>::mocked();
+		let checkpoint = block.start();
+		let tx = test_tx::<Ethereum>(0, 0);
+
+		let result =
+			Executable::execute_transaction(tx, &block, &checkpoint).unwrap();
+
+		// State should be a BundleState with changes
+		assert!(!result.state().is_empty());
+	}
+
+	#[test]
+	fn test_execution_result_clone() {
+		let block = BlockContext::<Ethereum>::mocked();
+		let checkpoint = block.start();
+		let tx = test_tx::<Ethereum>(0, 0);
+
+		let result =
+			Executable::execute_transaction(tx, &block, &checkpoint).unwrap();
+		let cloned = result.clone();
+
+		assert_eq!(result, cloned);
+	}
+}
