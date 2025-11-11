@@ -4,6 +4,7 @@
 //! implementing different builders.
 
 mod builder;
+mod combinator;
 mod ordering;
 mod revert;
 mod utils;
@@ -11,6 +12,7 @@ mod utils;
 pub use {
 	crate::pool::AppendOrders,
 	builder::*,
+	combinator::*,
 	ordering::*,
 	revert::*,
 	utils::*,

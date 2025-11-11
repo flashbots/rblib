@@ -1,23 +1,19 @@
-//! This module defines composite steps that can be used to compose multiple
+//! This module defines combinator steps that can be used to combine multiple
 //! steps into a single step.
 
 use {
-	crate::{
-		pipelines::step::StepInstance,
-		platform::types::BuiltPayload,
-		prelude::*,
-	},
+	crate::{platform::types::BuiltPayload, prelude::*},
 	std::sync::Arc,
 };
 
-/// A composite step with a list of steps.
+/// A combinator step with a list of steps.
 /// The associated mode defines the specific behavior of executing steps
-pub struct CompositeStep<P: Platform, M> {
+pub struct CombineStep<P: Platform, M> {
 	steps: Vec<Arc<StepInstance<P>>>,
 	mode: M,
 }
 
-impl<P: Platform, M> CompositeStep<P, M> {
+impl<P: Platform, M> CombineStep<P, M> {
 	pub fn new(mode: M) -> Self {
 		Self {
 			steps: Vec::new(),
@@ -30,9 +26,9 @@ impl<P: Platform, M> CompositeStep<P, M> {
 	}
 }
 
-/// A composite step mode defines the specific behavior of executing steps
+/// A combinator step mode defines the specific behavior of executing steps
 /// It takes the list of steps, initial payload and context
-trait CompositeStepMode<P: Platform>: Send + Sync {
+trait CombineStepMode<P: Platform>: Send + Sync {
 	fn steps(
 		&self,
 		steps: &[Arc<StepInstance<P>>],
@@ -41,12 +37,12 @@ trait CompositeStepMode<P: Platform>: Send + Sync {
 	) -> impl Future<Output = ControlFlow<P>> + Send;
 }
 
-/// `CompositeStep` will execute all before/after/setup functions of each step
-/// in order The step implementation is delegated to the composite mode
-impl<P, M> Step<P> for CompositeStep<P, M>
+/// `CombineStep` will execute all before/after/setup functions of each step
+/// in order The step implementation is delegated to the combinator mode
+impl<P, M> Step<P> for CombineStep<P, M>
 where
 	P: Platform,
-	M: CompositeStepMode<P> + Send + 'static,
+	M: CombineStepMode<P> + Send + 'static,
 {
 	async fn step(
 		self: Arc<Self>,
@@ -92,10 +88,10 @@ where
 mod tests {
 	use {super::*, crate::test_utils::*};
 
-	// Composite step mode that tries to execute all steps and ignore all failures
+	// Combine step mode that tries to execute all steps and ignore all failures
 	// and breaks Will return the latest successful result
 	struct TryAllMode;
-	impl<P: Platform> CompositeStepMode<P> for TryAllMode {
+	impl<P: Platform> CombineStepMode<P> for TryAllMode {
 		async fn steps(
 			&self,
 			steps: &[Arc<StepInstance<P>>],
@@ -114,33 +110,33 @@ mod tests {
 		}
 	}
 
-	#[rblib_test(Ethereum)]
-	async fn composite_empty_steps<P: TestablePlatform>() -> eyre::Result<()> {
-		let composite = CompositeStep::<P, _>::new(TryAllMode);
-		let result = OneStep::<P>::new(composite).run().await?;
+	#[rblib_test(Ethereum, Optimism)]
+	async fn combine_empty_steps<P: TestablePlatform>() -> eyre::Result<()> {
+		let combined = CombineStep::<P, _>::new(TryAllMode);
+		let result = OneStep::<P>::new(combined).run().await?;
 		assert!(matches!(result, ControlFlow::Ok(_)));
 		Ok(())
 	}
 
-	#[rblib_test(Ethereum)]
-	async fn composite_single_step_ok<P: TestablePlatform>() -> eyre::Result<()> {
-		let mut composite = CompositeStep::<P, _>::new(TryAllMode);
-		composite.append_step(AlwaysOkStep);
+	#[rblib_test(Ethereum, Optimism)]
+	async fn combine_single_step_ok<P: TestablePlatform>() -> eyre::Result<()> {
+		let mut combined = CombineStep::<P, _>::new(TryAllMode);
+		combined.append_step(AlwaysOkStep);
 
-		let result = OneStep::<P>::new(composite).run().await?;
+		let result = OneStep::<P>::new(combined).run().await?;
 		assert!(matches!(result, ControlFlow::Ok(_)));
 		Ok(())
 	}
 
-	#[rblib_test(Ethereum)]
-	async fn composite_multiple_steps_ok<P: TestablePlatform>() -> eyre::Result<()>
+	#[rblib_test(Ethereum, Optimism)]
+	async fn combine_multiple_steps_ok<P: TestablePlatform>() -> eyre::Result<()>
 	{
-		let mut composite = CompositeStep::<P, _>::new(TryAllMode);
-		composite.append_step(AlwaysOkStep);
-		composite.append_step(AlwaysOkStep);
-		composite.append_step(AlwaysOkStep);
+		let mut combined = CombineStep::<P, _>::new(TryAllMode);
+		combined.append_step(AlwaysOkStep);
+		combined.append_step(AlwaysOkStep);
+		combined.append_step(AlwaysOkStep);
 
-		let result = OneStep::<P>::new(composite).run().await?;
+		let result = OneStep::<P>::new(combined).run().await?;
 		assert!(matches!(result, ControlFlow::Ok(_)));
 
 		Ok(())

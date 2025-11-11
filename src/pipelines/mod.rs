@@ -2,6 +2,7 @@
 //!
 //! This API is used to construct payload builders workflows.
 
+pub(crate) use step::StepInstance;
 use {
 	crate::{prelude::*, reth::builder::components::PayloadServiceBuilder},
 	core::{any::Any, fmt::Display, panic::Location},
@@ -10,7 +11,6 @@ use {
 	futures::Stream,
 	pipelines_macros::impl_into_pipeline_steps,
 	std::sync::Arc,
-	step::StepInstance,
 };
 
 mod events;
@@ -30,14 +30,7 @@ pub use {
 	Behavior::{Loop, Once},
 	events::system_events::*,
 	limits::*,
-	step::{
-		ControlFlow,
-		InitContext,
-		PayloadBuilderError,
-		Step,
-		StepContext,
-		composite,
-	},
+	step::{ControlFlow, InitContext, PayloadBuilderError, Step, StepContext},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
