@@ -62,7 +62,7 @@ type WrappedSetupFn<P: Platform> = Box<
 
 /// Wraps a step in a type-erased manner, allowing it to be stored in a
 /// heterogeneous collection of steps inside a pipeline.
-pub(crate) struct StepInstance<P: Platform> {
+pub struct StepInstance<P: Platform> {
 	instance: Arc<dyn Any + Send + Sync>,
 	step_fn: WrappedStepFn<P>,
 	before_job_fn: WrappedBeforeJobFn<P>,
