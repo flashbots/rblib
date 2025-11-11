@@ -443,7 +443,7 @@ mod tests {
 		let (bundle, txs) = test_bundle::<Ethereum>(0, 0);
 		let executable = Executable::<Ethereum>::Bundle(bundle);
 
-		assert_eq!(executable.transactions().len(), 3);
+		assert_eq!(executable.transactions().len(), txs.len());
 		assert_eq!(executable.transactions(), txs.as_slice());
 		assert!(!executable.is_transaction());
 		assert!(executable.is_bundle());
@@ -458,7 +458,6 @@ mod tests {
 		let result =
 			Executable::execute_transaction(tx.clone(), &block, &checkpoint);
 
-		assert!(result.is_ok());
 		let exec_result = result.unwrap();
 		assert_eq!(exec_result.results().len(), 1);
 		assert_eq!(exec_result.transactions().len(), 1);
@@ -474,7 +473,6 @@ mod tests {
 
 		let result = Executable::execute_transaction(tx, &block, &checkpoint);
 
-		assert!(result.is_ok());
 		let exec_result = result.unwrap();
 		assert!(!exec_result.state().is_empty());
 		assert!(exec_result.gas_used() > 0);
@@ -489,7 +487,6 @@ mod tests {
 
 		let result = executable.execute(&block, &checkpoint);
 
-		assert!(result.is_ok());
 		assert_eq!(result.unwrap().results().len(), 1);
 	}
 
@@ -501,11 +498,10 @@ mod tests {
 
 		let result = Executable::execute_bundle(bundle, &block, &checkpoint);
 
-		assert!(result.is_ok());
 		let exec_result = result.unwrap();
-		assert_eq!(exec_result.results().len(), 3);
+		assert_eq!(exec_result.results().len(), txs.len());
 		assert!(exec_result.results().iter().all(|r| r.is_success()));
-		assert_eq!(exec_result.transactions().len(), 3);
+		assert_eq!(exec_result.transactions().len(), txs.len());
 		assert_eq!(exec_result.transactions(), txs.as_slice());
 	}
 
@@ -517,7 +513,6 @@ mod tests {
 
 		let result = Executable::execute_bundle(bundle, &block, &checkpoint);
 
-		assert!(result.is_ok());
 		let exec_result = result.unwrap();
 		let total_gas = exec_result.gas_used();
 		let sum_gas: u64 = exec_result.results().iter().map(|r| r.gas_used()).sum();
@@ -530,7 +525,7 @@ mod tests {
 		// Each transaction in a bundle executes on the state from the previous
 		let block = BlockContext::<Ethereum>::mocked();
 		let checkpoint = block.start();
-		// Use same account for all transactions to test sequential nonces
+		// Use the same account for all transactions to test sequential nonces
 		let txs = test_txs::<Ethereum>(0, 0, 3);
 		let bundle = FlashbotsBundle::<Ethereum>::default()
 			.with_transaction(txs[0].clone())
@@ -539,9 +534,8 @@ mod tests {
 
 		let result = Executable::execute_bundle(bundle, &block, &checkpoint);
 
-		assert!(result.is_ok());
 		let exec_result = result.unwrap();
-		assert_eq!(exec_result.results().len(), 3);
+		assert_eq!(exec_result.results().len(), txs.len());
 		assert!(exec_result.results().iter().all(|r| r.is_success()));
 	}
 
@@ -551,7 +545,6 @@ mod tests {
 		let result: Result<Executable<Ethereum>, _> =
 			IntoExecutable::<Ethereum, Variant<2>>::try_into_executable(tx.clone());
 
-		assert!(result.is_ok());
 		let executable = result.unwrap();
 		assert!(executable.is_transaction());
 		assert_eq!(executable.transactions()[0], tx);
@@ -563,7 +556,6 @@ mod tests {
 		let result: Result<Executable<Ethereum>, _> =
 			IntoExecutable::<Ethereum, Variant<3>>::try_into_executable(bundle);
 
-		assert!(result.is_ok());
 		assert!(result.unwrap().is_bundle());
 	}
 
@@ -576,7 +568,6 @@ mod tests {
 				executable.clone(),
 			);
 
-		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), executable);
 	}
 
@@ -592,7 +583,6 @@ mod tests {
 				checkpoint_with_tx,
 			);
 
-		assert!(result.is_ok());
 		let executable = result.unwrap();
 		assert!(executable.is_transaction());
 		assert_eq!(executable.transactions()[0], tx);
@@ -610,7 +600,6 @@ mod tests {
 				&checkpoint_with_tx,
 			);
 
-		assert!(result.is_ok());
 		let executable = result.unwrap();
 		assert!(executable.is_transaction());
 		assert_eq!(executable.transactions()[0], tx);
