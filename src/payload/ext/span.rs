@@ -1,5 +1,7 @@
 use crate::{
-	alloy::primitives::TxHash, prelude::*, reth::primitives::Recovered,
+	alloy::primitives::TxHash,
+	prelude::*,
+	reth::primitives::Recovered,
 };
 
 /// Quality of Life extensions for the `Span` type.
@@ -107,54 +109,19 @@ impl<P: Platform> SpanExt<P> for Span<P> {
 
 #[cfg(test)]
 mod span_ext_tests {
-	use crate::{
-		payload::{Span, SpanExt},
-		prelude::{BlockContext, Checkpoint, Ethereum},
-		test_utils::BlockContextMocked,
-	};
-
 	use {
-		alloy::{
-			consensus::{EthereumTxEnvelope, TxEip4844},
-			network::{TransactionBuilder, TxSignerSync},
-			primitives::{Address, U256},
-			signers::local::PrivateKeySigner,
+		crate::{
+			payload::{Span, SpanExt},
+			prelude::{BlockContext, Checkpoint, Ethereum},
+			test_utils::{BlockContextMocked, transfer_tx},
 		},
-		rblib::{alloy, reth, test_utils::FundedAccounts},
-		reth::{
-			ethereum::{TransactionSigned, primitives::SignedTransaction},
-			primitives::Recovered,
-			rpc::types::TransactionRequest,
-		},
+		alloy::primitives::U256,
+		rblib::{alloy, test_utils::FundedAccounts},
 	};
-
-	fn transfer_tx(
-		signer: &PrivateKeySigner,
-		nonce: u64,
-		value: U256,
-	) -> Recovered<EthereumTxEnvelope<TxEip4844>> {
-		let mut tx = TransactionRequest::default()
-			.with_nonce(nonce)
-			.with_to(Address::random())
-			.value(value)
-			.with_gas_price(1_000_000_000)
-			.with_gas_limit(21_000)
-			.with_max_priority_fee_per_gas(1_000_000)
-			.with_max_fee_per_gas(2_000_000)
-			.build_unsigned()
-			.expect("valid transaction request");
-
-		let sig = signer
-			.sign_transaction_sync(&mut tx)
-			.expect("signing should succeed");
-
-		TransactionSigned::new_unhashed(tx.into(), sig)
-			.with_signer(signer.address())
-	}
 
 	#[test]
 	fn gas_and_blob_gas_used_sum_correctly() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 
 		let root = block.start();
 		let c1: Checkpoint<Ethereum> = root.barrier();
@@ -168,12 +135,16 @@ mod span_ext_tests {
 
 	#[test]
 	fn contains_transaction_hash_works() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 
 		let root = block.start();
 		let c1: Checkpoint<Ethereum> = root.barrier();
 
-		let tx1 = transfer_tx(&FundedAccounts::signer(0), 0, U256::from(50_000u64));
+		let tx1 = transfer_tx::<Ethereum>(
+			&FundedAccounts::signer(0),
+			0,
+			U256::from(50_000u64),
+		);
 
 		let c2 = c1.apply(tx1.clone()).unwrap();
 
@@ -184,7 +155,7 @@ mod span_ext_tests {
 
 	#[test]
 	fn split_at_produces_valid_halves() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 
 		let root = block.start();
 		let c1: Checkpoint<Ethereum> = root.barrier();
@@ -203,7 +174,7 @@ mod span_ext_tests {
 
 	#[test]
 	fn take_and_skip_are_consistent_with_split_at() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 
 		let root = block.start();
 		let c1: Checkpoint<Ethereum> = root.barrier();

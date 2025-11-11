@@ -192,23 +192,24 @@ mod tests {
 
 	#[test]
 	fn span_between_linear_history() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 
 		let checkpoint = block.start();
 		let c1: Checkpoint<Ethereum> = checkpoint.barrier();
 		let c2: Checkpoint<Ethereum> = c1.barrier();
 
 		// Direct ancestor-descendant pair
-		let span = Span::<Ethereum>::between(&checkpoint, &c2).unwrap();
+		let mut span = Span::<Ethereum>::between(&checkpoint, &c2).unwrap();
 		assert_eq!(span.len(), 3);
-		assert_eq!(span.first().unwrap(), &checkpoint);
+		assert_eq!(span.pop_first().unwrap(), checkpoint);
 		assert_eq!(span.len(), 2);
-		assert_eq!(span.last().unwrap(), &c2);
+		assert_eq!(span.pop_last().unwrap(), c2);
+		assert_eq!(span.len(), 1);
 	}
 
 	#[test]
 	fn test_empty_span() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 
 		let checkpoint = block.start();
 
@@ -219,7 +220,7 @@ mod tests {
 
 	#[test]
 	fn test_between_nonlinear_history() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 
 		let checkpoint1 = block.start();
 		let checkpoint2 = block.start();
@@ -230,7 +231,7 @@ mod tests {
 
 	#[test]
 	fn into_iter_and_iterators_work() {
-		let (block, _) = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<Ethereum>::mocked();
 
 		let root = block.start();
 		let c1: Checkpoint<Ethereum> = root.barrier();
@@ -245,8 +246,7 @@ mod tests {
 		assert_eq!(ids_from_iter[2], c2);
 
 		// into_iter()
-		let ids_from_into_iter: Vec<_> =
-			span.clone().into_iter().map(|c| c).collect();
+		let ids_from_into_iter: Vec<_> = span.clone().into_iter().collect();
 		assert_eq!(ids_from_iter, ids_from_into_iter);
 	}
 }
