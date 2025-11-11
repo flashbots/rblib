@@ -81,6 +81,12 @@ impl<P: Platform> Pipeline<P> {
 		this
 	}
 
+	/// Conditionally add a prologue
+	#[must_use]
+	pub fn with_prologue_if(self, cond: bool, step: impl Step<P>) -> Self {
+		if cond { self.with_prologue(step) } else { self }
+	}
+
 	/// A step that happens as the last step of the block after the whole payload
 	/// has been built. Can be called multiple times to add multiple epilogue
 	/// steps.
@@ -89,6 +95,12 @@ impl<P: Platform> Pipeline<P> {
 		let mut this = self;
 		this.epilogue.push(Arc::new(StepInstance::new(step)));
 		this
+	}
+
+	/// Conditionally add an epilogue
+	#[must_use]
+	pub fn with_epilogue_if(self, cond: bool, step: impl Step<P>) -> Self {
+		if cond { self.with_epilogue(step) } else { self }
 	}
 
 	/// A step that runs with an input that is the result of the previous step.
@@ -101,6 +113,12 @@ impl<P: Platform> Pipeline<P> {
 			.steps
 			.push(StepOrPipeline::Step(Arc::new(StepInstance::new(step))));
 		this
+	}
+
+	/// Conditionally add a step
+	#[must_use]
+	pub fn with_step_if(self, cond: bool, step: impl Step<P>) -> Self {
+		if cond { self.with_step(step) } else { self }
 	}
 
 	/// Adds a nested pipeline to the current pipeline.
