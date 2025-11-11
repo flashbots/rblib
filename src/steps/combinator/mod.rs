@@ -99,7 +99,7 @@ impl<P: Platform> Step<P> for Atomic<P> {
 
 		for step in self.steps() {
 			if ctx.deadline_reached() {
-				return ControlFlow::Break(initial);
+				return ControlFlow::Ok(initial);
 			}
 
 			match step.step(current, ctx.clone()).await {
@@ -109,7 +109,7 @@ impl<P: Platform> Step<P> for Atomic<P> {
 		}
 
 		if ctx.deadline_reached() {
-			ControlFlow::Break(initial)
+			ControlFlow::Ok(initial)
 		} else {
 			ControlFlow::Ok(current)
 		}
