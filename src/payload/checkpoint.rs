@@ -195,9 +195,9 @@ impl<P: Platform> Checkpoint<P> {
 		Ok(self.apply_with(mutation, None))
 	}
 
-	/// Executes transaction on top of the current checkpoint. The execution will use the
-	/// cumulative state of all checkpoints in the current checkpoint history as
-	/// its state.
+	/// Executes transaction on top of the current checkpoint. The execution will
+	/// use the cumulative state of all checkpoints in the current checkpoint
+	/// history as its state.
 	pub fn simulate<S>(
 		&self,
 		executable: impl IntoExecutable<P, S>,

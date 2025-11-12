@@ -299,9 +299,7 @@ impl<P: Platform> Executable<P> {
 	where
 		DB: DatabaseRef<Error = ProviderError> + Debug,
 	{
-		let mut state = State::builder()
-			.with_database(WrapDatabaseRef(db))
-			.build();
+		let mut state = State::builder().with_database(WrapDatabaseRef(db)).build();
 
 		let result = block
 			.evm_config()
