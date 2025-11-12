@@ -25,7 +25,7 @@ pub trait OrderScore<P: Platform>:
 	type Score: Clone + Ord + Eq + core::hash::Hash;
 	type Error: core::error::Error + Send + Sync + 'static;
 
-	fn score(_: &Checkpoint<P>) -> Result<Self::Score, Self::Error>;
+	fn score(&self, checkpoint: &Checkpoint<P>) -> Result<Self::Score, Self::Error>;
 }
 
 /// A generic implementation of a step that will order checkpoints based on a
@@ -36,8 +36,29 @@ pub trait OrderScore<P: Platform>:
 /// Sorting happens only for the mutable part of the payload, i.e. after
 /// the last barrier checkpoint. Anything prior to the last barrier
 /// checkpoint is considered immutable and will not be reordered.
-#[derive(Debug, Clone, Default)]
-pub struct OrderBy<P: Platform, S: OrderScore<P>>(PhantomData<(P, S)>);
+#[derive(Debug, Clone)]
+pub struct OrderBy<P: Platform, S: OrderScore<P>> {
+	scorer: S,
+	_phantom: PhantomData<P>,
+}
+
+impl<P: Platform, S: OrderScore<P>> Default for OrderBy<P, S> {
+	fn default() -> Self {
+		Self {
+			scorer: S::default(),
+			_phantom: PhantomData,
+		}
+	}
+}
+
+impl<P: Platform, S: OrderScore<P>> OrderBy<P, S> {
+	pub fn new(scorer: S) -> Self {
+		Self {
+			scorer,
+			_phantom: PhantomData,
+		}
+	}
+}
 impl<P: Platform, S: OrderScore<P>> Step<P> for OrderBy<P, S> {
 	async fn step(
 		self: Arc<Self>,
@@ -50,7 +71,7 @@ impl<P: Platform, S: OrderScore<P>> Step<P> for OrderBy<P, S> {
 		let history = payload.history_staging();
 
 		// Find the correct order of orders in the payload.
-		let ordered = match SortedOrders::<P, S>::try_from(&history) {
+		let ordered = match SortedOrders::<P, S>::try_from((&history, &self.scorer)) {
 			Ok(ordered) => ordered.into_iter(),
 			// when the step started running, the payload had no nonce conflicts and
 			// all orders were able to construct valid checkpoints. After reordering,
@@ -115,12 +136,12 @@ struct SortedOrders<'a, P: Platform, S: OrderScore<P>> {
 	_scoring: PhantomData<S>,
 }
 
-impl<'a, P: Platform, S: OrderScore<P>> TryFrom<&'a Span<P>>
+impl<'a, P: Platform, S: OrderScore<P>> TryFrom<(&'a Span<P>, &'a S)>
 	for SortedOrders<'a, P, S>
 {
 	type Error = S::Error;
 
-	fn try_from(span: &'a Span<P>) -> Result<Self, Self::Error> {
+	fn try_from((span, scorer): (&'a Span<P>, &'a S)) -> Result<Self, Self::Error> {
 		let executables = span.iter().filter(|checkpoint| !checkpoint.is_barrier());
 		let all_orders: HashMap<B256, &'a Checkpoint<P>> = executables
 			.map(|checkpoint| (checkpoint.hash().unwrap(), checkpoint))
@@ -141,7 +162,7 @@ impl<'a, P: Platform, S: OrderScore<P>> TryFrom<&'a Span<P>>
 
 		let mut by_score = BTreeMap::<_, BTreeSet<_>>::default();
 		for (hash, checkpoint) in &all_orders {
-			let score = S::score(checkpoint)?;
+			let score = scorer.score(checkpoint)?;
 			by_score.entry(score).or_default().insert(*hash);
 		}
 
