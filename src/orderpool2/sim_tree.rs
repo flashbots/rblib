@@ -271,4 +271,8 @@ where
 		}
 		Ok(())
 	}
+
+	pub fn is_ready(&self) -> bool {
+		!self.ready_orders.is_empty()
+	}
 }

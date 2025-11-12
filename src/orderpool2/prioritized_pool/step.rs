@@ -9,10 +9,12 @@ use {
 		alloy::{
 			consensus::Transaction,
 			primitives::{Address, B256},
+			consensus::transaction::Recovered,
 		},
 		orderpool2::{AccountNonce, BundleNonce},
 		payload::CheckpointExt,
 		prelude::{Bundle, Checkpoint, ControlFlow, Platform, Step, StepContext},
+		platform::types::Transaction as PlatformTransaction,
 		reth,
 	},
 	parking_lot::Mutex,
@@ -23,6 +25,7 @@ use {
 		sync::Arc,
 	},
 };
+use crate::prelude::Optimism;
 
 #[derive(Clone)]
 pub struct BundleWithNonces<B, P> {
@@ -36,7 +39,7 @@ where
 	B: Bundle<P>,
 	P: Platform,
 {
-	fn new(bundle: B) -> Self {
+	pub fn new(bundle: B) -> Self {
 		let txs = bundle.transactions();
 		let mut nonces = Vec::with_capacity(txs.len());
 		for tx in txs {
@@ -71,6 +74,23 @@ where
 
 	fn nonces(&self) -> Vec<BundleNonce> {
 		self.nonces.clone()
+	}
+}
+
+impl OrderpoolOrder for Recovered<PlatformTransaction<Optimism>>
+{
+	type ID = B256;
+
+	fn id(&self) -> Self::ID {
+		*self.tx_hash()
+	}
+
+	fn nonces(&self) -> Vec<BundleNonce> {
+		vec![BundleNonce{
+			address: self.signer(),
+			nonce: self.nonce(),
+			optional: false
+		}]
 	}
 }
 
