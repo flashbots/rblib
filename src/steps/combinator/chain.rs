@@ -64,7 +64,7 @@ impl<P: Platform> Step<P> for Chain<P> {
 #[macro_export]
 macro_rules! chain {
     ($first:expr $(, $rest:expr)* $(,)?) => {{
-        let mut c = Atomic::of(vec![Arc::new(StepInstance::new($first))]);
+        let mut c = Atomic::of($first);
         $(
             c = c.and($rest);
         )*
