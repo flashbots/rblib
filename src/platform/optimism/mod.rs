@@ -10,7 +10,14 @@ use {
 		chainspec::EthChainSpec,
 		optimism::{
 			forks::OpHardforks,
-			node::{payload::{builder::*, config::{OpBuilderConfig, OpGasLimitConfig}}, txpool::OpPooledTransaction, *},
+			node::{
+				payload::{
+					builder::*,
+					config::{OpBuilderConfig, OpGasLimitConfig},
+				},
+				txpool::OpPooledTransaction,
+				*,
+			},
 		},
 		payload::{builder::*, util::PayloadTransactionsFixed},
 		primitives::Recovered,
@@ -102,7 +109,10 @@ impl Platform for Optimism {
 
 		let context = OpPayloadBuilderCtx {
 			evm_config: block.evm_config(),
-			builder_config: OpBuilderConfig::new(OpDAConfig::default(), OpGasLimitConfig::default()),
+			builder_config: OpBuilderConfig::new(
+				OpDAConfig::default(),
+				OpGasLimitConfig::default(),
+			),
 			chain_spec: block.chainspec().clone(),
 			config: PayloadConfig::<types::PayloadBuilderAttributes<P>, _>::new(
 				block.parent().clone().into(),
