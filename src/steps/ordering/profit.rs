@@ -13,7 +13,10 @@ impl<P: Platform> OrderScore<P> for CoinbaseProfitScore<P> {
 	type Error = ProviderError;
 	type Score = U256;
 
-	fn score(&self, checkpoint: &Checkpoint<P>) -> Result<Self::Score, Self::Error> {
+	fn score(
+		&self,
+		checkpoint: &Checkpoint<P>,
+	) -> Result<Self::Score, Self::Error> {
 		let fee_recipient = checkpoint.block().coinbase();
 		let current_balance = checkpoint.balance_of(fee_recipient)?;
 

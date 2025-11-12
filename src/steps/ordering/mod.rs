@@ -16,7 +16,10 @@ mod profit;
 mod tip;
 
 pub use {
-	destination::{DestinationAndPriorityFeeScore, OrderByDestinationAndPriorityFee},
+	destination::{
+		DestinationAndPriorityFeeScore,
+		OrderByDestinationAndPriorityFee,
+	},
 	profit::OrderByCoinbaseProfit,
 	tip::OrderByPriorityFee,
 };
@@ -30,7 +33,10 @@ pub trait OrderScore<P: Platform>:
 	type Score: Clone + Ord + Eq + core::hash::Hash;
 	type Error: core::error::Error + Send + Sync + 'static;
 
-	fn score(&self, checkpoint: &Checkpoint<P>) -> Result<Self::Score, Self::Error>;
+	fn score(
+		&self,
+		checkpoint: &Checkpoint<P>,
+	) -> Result<Self::Score, Self::Error>;
 }
 
 /// A generic implementation of a step that will order checkpoints based on a
@@ -76,7 +82,8 @@ impl<P: Platform, S: OrderScore<P>> Step<P> for OrderBy<P, S> {
 		let history = payload.history_staging();
 
 		// Find the correct order of orders in the payload.
-		let ordered = match SortedOrders::<P, S>::try_from((&history, &self.scorer)) {
+		let ordered = match SortedOrders::<P, S>::try_from((&history, &self.scorer))
+		{
 			Ok(ordered) => ordered.into_iter(),
 			// when the step started running, the payload had no nonce conflicts and
 			// all orders were able to construct valid checkpoints. After reordering,
@@ -146,7 +153,9 @@ impl<'a, P: Platform, S: OrderScore<P>> TryFrom<(&'a Span<P>, &'a S)>
 {
 	type Error = S::Error;
 
-	fn try_from((span, scorer): (&'a Span<P>, &'a S)) -> Result<Self, Self::Error> {
+	fn try_from(
+		(span, scorer): (&'a Span<P>, &'a S),
+	) -> Result<Self, Self::Error> {
 		let executables = span.iter().filter(|checkpoint| !checkpoint.is_barrier());
 		let all_orders: HashMap<B256, &'a Checkpoint<P>> = executables
 			.map(|checkpoint| (checkpoint.hash().unwrap(), checkpoint))

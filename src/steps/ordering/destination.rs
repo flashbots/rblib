@@ -39,14 +39,18 @@ impl<P: Platform> OrderScore<P> for DestinationAndPriorityFeeScore<P> {
 	// two-tier priority system which we want: Transactions going to the
 	// destination address are always prioritized over transactions that aren't.
 	// Within each tier, they're ordered by effective tip.
-	fn score(&self, checkpoint: &Checkpoint<P>) -> Result<Self::Score, Self::Error> {
+	fn score(
+		&self,
+		checkpoint: &Checkpoint<P>,
+	) -> Result<Self::Score, Self::Error> {
 		let all_destination = checkpoint
 			.transactions()
 			.iter()
 			.all(|tx| tx.to() == Some(self.destination_address));
 		let tip_sum = CheckpointExt::effective_tip_per_gas(checkpoint);
-		Ok((all_destination as u8, tip_sum))
+		Ok((u8::from(all_destination), tip_sum))
 	}
 }
 
-pub type OrderByDestinationAndPriorityFee<P> = OrderBy<P, DestinationAndPriorityFeeScore<P>>;
+pub type OrderByDestinationAndPriorityFee<P> =
+	OrderBy<P, DestinationAndPriorityFeeScore<P>>;

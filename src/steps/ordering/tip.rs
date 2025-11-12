@@ -11,7 +11,10 @@ impl<P: Platform> OrderScore<P> for PriorityFeeScore<P> {
 	type Error = Infallible;
 	type Score = u128;
 
-	fn score(&self, checkpoint: &Checkpoint<P>) -> Result<Self::Score, Self::Error> {
+	fn score(
+		&self,
+		checkpoint: &Checkpoint<P>,
+	) -> Result<Self::Score, Self::Error> {
 		Ok(checkpoint.effective_tip_per_gas())
 	}
 }
