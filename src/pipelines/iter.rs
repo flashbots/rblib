@@ -11,7 +11,7 @@ struct Frame<'a, P: Platform> {
 	path: StepPath,
 	next_ix: usize,
 	yielded_prologue: bool,
-	epilogue_ix: usize,
+	yielded_epilogue: bool,
 }
 
 impl<'a, P: Platform> StepPathIter<'a, P> {
@@ -22,7 +22,7 @@ impl<'a, P: Platform> StepPathIter<'a, P> {
 				next_ix: 0,
 				path: StepPath::empty(),
 				yielded_prologue: false,
-				epilogue_ix: 0,
+				yielded_epilogue: false,
 			}],
 		}
 	}
@@ -56,18 +56,17 @@ impl<P: Platform> Iterator for StepPathIter<'_, P> {
 							path: next_path,
 							next_ix: 0,
 							yielded_prologue: false,
-							epilogue_ix: 0,
+							yielded_epilogue: false,
 						});
 						continue;
 					}
 				}
 			}
 
-			// Walk epilogue steps/pipelines; descend into nested pipelines.
-			if frame.epilogue_ix < frame.pipeline.epilogue.len() {
-				let ix = frame.epilogue_ix;
-				frame.epilogue_ix += 1;
-				return Some(frame.path.clone().concat(StepPath::epilogue_step(ix)));
+			// Yield epilogue once, if present.
+			if !frame.yielded_epilogue && frame.pipeline.epilogue.is_some() {
+				frame.yielded_epilogue = true;
+				return Some(frame.path.clone().concat(StepPath::epilogue()));
 			}
 
 			// Done with this frame; pop and continue with parent.
@@ -103,7 +102,7 @@ mod tests {
 			.with_step(Step3)
 			.with_epilogue(EpilogueOne);
 
-		let expected = vec!["p", "1", "2", "3", "e0"];
+		let expected = vec!["p", "1", "2", "3", "e"];
 		let actual = pipeline
 			.iter_steps()
 			.map(|step| step.to_string())
@@ -126,7 +125,7 @@ mod tests {
 			.with_epilogue(EpilogueOne);
 
 		let expected = vec![
-			"p", "1_p", "1_1", "1_2_1", "1_2_2", "1_2_3", "1_2_e0", "1_3", "e0",
+			"p", "1_p", "1_1", "1_2_1", "1_2_2", "1_2_3", "1_2_e", "1_3", "e",
 		];
 
 		let actual = pipeline
