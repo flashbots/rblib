@@ -15,6 +15,9 @@ combinator!(
 	/// - The final result is either the last successful checkpoint or the first
 	///   non-Ok control flow
 	///
+	/// At any point, if the deadline is reached, execution stops and returns
+	/// [`ControlFlow::Break`] with the last successful checkpoint.
+	///
 	/// # Example
 	///
 	/// ```rust
@@ -95,9 +98,9 @@ impl<P: Platform> Step<P> for Chain<P> {
 #[macro_export]
 macro_rules! chain {
     ($first:expr $(, $rest:expr)* $(,)?) => {{
-        let mut c = Atomic::of($first);
+        let mut c = Chain::of($first);
         $(
-            c = c.and($rest);
+            c = c.then($rest);
         )*
         c
     }};
@@ -219,5 +222,12 @@ mod tests {
 			event_sub.next().await,
 			Some(StringEvent("OkWithEventStep: after_job".to_string()))
 		);
+	}
+
+	#[rblib_test(Ethereum, Optimism)]
+	async fn chain_macro<P: TestablePlatform>() {
+		let chain = chain!(AlwaysOkStep, AlwaysOkStep, AlwaysOkStep);
+		let output = OneStep::<P>::new(chain).run().await.unwrap();
+		assert!(output.is_ok());
 	}
 }
