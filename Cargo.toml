@@ -111,6 +111,8 @@ serde = "1.0"
 jsonrpsee = "0.26.0"
 parking_lot = "0.12"
 metrics = "0.24.0"
+priority-queue = "2.0.0"
+
 
 # Alloy dependencies
 alloy-origin = { version = "1.0.37", package = "alloy", features = [

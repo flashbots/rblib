@@ -22,8 +22,14 @@ pub mod metrics_util {
 /// Order Pool Public API
 pub mod pool;
 
+/// Oder Pool for ordered inclusion.
+pub mod prioritized_pool;
+
 /// Common steps library
 pub mod steps;
+
+/// Common primitive types and utils
+pub mod primitives;
 
 /// Externally available test utilities
 #[cfg(any(test, feature = "test-utils"))]
