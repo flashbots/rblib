@@ -8,7 +8,7 @@
 /// 2. Clone it before starting block building run
 /// 3. Pop bundles using `pop_order` until it returns None and try to
 ///    include them
-/// 4. Update onchain nonces after each successfull commit using
+/// 4. Update onchain nonces after each successful commit using
 ///    `update_onchain_nonces`
 use {
 	crate::{
@@ -110,7 +110,7 @@ where
 		Some(order)
 	}
 
-	/// Updates oderpool with changed nonces
+	/// Updates orderpool with changed nonces
 	/// if order updates onchain nonce from n -> n + 2, we get n + 2 as an
 	/// arguments here
 	/// # Panics

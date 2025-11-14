@@ -216,7 +216,7 @@ fn test_block_orders_simple() {
 }
 
 #[test]
-/// Tests 3 tx from the same account, only 1 can succeeded
+/// Tests 3 tx from the same account, only 1 can succeed
 fn test_block_orders_competing_orders() {
 	let (nonce, mut context) = TestContext::new_1_account(0);
 	let middle_order = context.create_add_tx_order(&nonce, 3);

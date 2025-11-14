@@ -1,4 +1,4 @@
-/// Example usage of `iterator_pool` using pipelines
+/// Example usage of `prioritized_pool` using pipelines
 use {
 	super::{
 		PrioritizedOrderpool,
@@ -137,8 +137,8 @@ impl<B: Send + Sync + Bundle<P>, P: Send + Sync + Platform>
 			accumulated_weighted_fee += max_fee * gas_limit;
 			total_gas_limit += gas_limit;
 		}
-		let effective_gas_price = if accumulated_weighted_fee != 0 {
-			total_gas_limit / accumulated_weighted_fee
+		let effective_gas_price = if total_gas_limit != 0 {
+			accumulated_weighted_fee / total_gas_limit
 		} else {
 			0
 		};

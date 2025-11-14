@@ -491,8 +491,8 @@ impl<P: Platform> ExecutionResult<P> {
 		self.results.iter().map(|r| r.gas_used()).sum()
 	}
 
-	/// Account nonces changed after transactions execution.
-	/// If transactions changes nonces nonces from N to N+1 this would return N+1.
+	/// Account nonces changed after transaction execution.
+	/// If transactions change nonces from N to N+1, this would return N+1.
 	pub fn changed_nonces(&self) -> &[AccountNonce] {
 		&self.nonces_after_execution
 	}
