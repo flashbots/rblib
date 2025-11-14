@@ -227,7 +227,7 @@ fn test_block_orders_competing_orders() {
 	// we simulate that best_order failed to execute so we don't call
 	// update_onchain_nonces
 	context.assert_pop_order(&middle_order);
-	// we simulate that middle_order excuted
+	// we simulate that middle_order executed
 	context.update_nonce(&nonce, 1);
 	// we must see none and NOT _worst_order (invalid nonce)
 	context.assert_pop_none();

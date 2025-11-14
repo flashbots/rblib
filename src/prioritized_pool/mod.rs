@@ -8,7 +8,7 @@
 /// 2. Clone it before starting block building run
 /// 3. Pop bundles using `pop_order` until it returns None and try to
 ///    include them
-/// 4. Update onchain nonces after each succesfull commit using
+/// 4. Update onchain nonces after each successfull commit using
 ///    `update_onchain_nonces`
 use {
 	crate::{
@@ -91,13 +91,13 @@ where
 		let (id, _) = self.main_queue.pop()?;
 
 		let order = self
-			.remove_poped_order(&id)
+			.remove_popped_order(&id)
 			.expect("order from prio queue not found in block orders");
 		Some(order)
 	}
 
 	/// Clean up after some order was removed from `main_queue`
-	fn remove_poped_order(&mut self, id: &Order::ID) -> Option<Order> {
+	fn remove_popped_order(&mut self, id: &Order::ID) -> Option<Order> {
 		let order = self.remove_from_orders(id)?;
 		for BundleNonce { address, .. } in order.nonces() {
 			match self.main_queue_nonces.entry(address) {
@@ -135,7 +135,7 @@ where
 			// check if order can still be valid because of optional nonces
 			self.main_queue.remove(&order_id);
 			let order = self
-				.remove_poped_order(&order_id)
+				.remove_popped_order(&order_id)
 				.expect("order from prio queue not found in block orders");
 			let mut valid = true;
 			let mut valid_nonces = 0;
@@ -243,7 +243,7 @@ where
 	pub fn remove_order(&mut self, id: &Order::ID) -> Option<Order> {
 		// we don't remove from pending because pending will clean itself
 		if self.main_queue.remove(id).is_some() {
-			self.remove_poped_order(id);
+			self.remove_popped_order(id);
 		}
 		self.remove_from_orders(id)
 	}
