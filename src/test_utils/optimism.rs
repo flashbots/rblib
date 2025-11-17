@@ -89,6 +89,7 @@ where
 				TX_SET_L1_BLOCK_OP_MAINNET_BLOCK_124665056.into(),
 			]),
 			gas_limit: Some(BASE_MAINNET_MAX_GAS_LIMIT),
+			min_base_fee: Some(0),
 			..Default::default()
 		};
 
