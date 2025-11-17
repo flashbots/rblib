@@ -7,7 +7,6 @@ use {
 	core::ops::RangeBounds,
 	reth::{
 		chainspec::{ChainInfo, ChainSpecProvider, EthChainSpec},
-		ethereum::primitives::AlloyBlockHeader,
 		primitives::{Account, Bytecode, SealedHeader},
 		providers::*,
 		revm::db::BundleState,
@@ -236,9 +235,9 @@ impl<P: Platform> HeaderProvider for GenesisProviderFactory<P> {
 	/// Get header by block hash
 	fn header(
 		&self,
-		block_hash: &BlockHash,
+		block_hash: BlockHash,
 	) -> ProviderResult<Option<Self::Header>> {
-		if block_hash == &self.chainspec.genesis_hash() {
+		if block_hash == self.chainspec.genesis_hash() {
 			return Ok(Some(self.chainspec.genesis_header().clone()));
 		}
 		Ok(None)
@@ -248,25 +247,6 @@ impl<P: Platform> HeaderProvider for GenesisProviderFactory<P> {
 	fn header_by_number(&self, num: u64) -> ProviderResult<Option<Self::Header>> {
 		if num == 0 {
 			return Ok(Some(self.chainspec.genesis_header().clone()));
-		}
-		Ok(None)
-	}
-
-	/// Get total difficulty by block hash.
-	fn header_td(&self, hash: &BlockHash) -> ProviderResult<Option<U256>> {
-		if hash == &self.chainspec.genesis_hash() {
-			return Ok(Some(self.chainspec.genesis_header().difficulty()));
-		}
-		Ok(None)
-	}
-
-	/// Get total difficulty by block number.
-	fn header_td_by_number(
-		&self,
-		number: BlockNumber,
-	) -> ProviderResult<Option<U256>> {
-		if number == 0 {
-			return Ok(Some(self.chainspec.genesis_header().difficulty()));
 		}
 		Ok(None)
 	}
