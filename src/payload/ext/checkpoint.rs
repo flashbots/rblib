@@ -140,19 +140,25 @@ pub trait CheckpointExt<P: Platform>: super::sealed::Sealed {
 	/// by `Checkpoint::new_at_block`.
 	fn building_since(&self) -> Instant;
 
-	/// Returns a span starting at the last checkpoint tagged with `tag`.
-	/// Returns `None` if no such tag exists in history.
-	fn history_since_last_tag(&self, tag: &str) -> Option<Span<P>> {
+	/// Returns a span starting at the first checkpoint that matches the provided
+	/// context. Returns `None` if no such context exists in history.
+	fn history_since_first_context(
+		&self,
+		context: &P::CheckpointContext,
+	) -> Option<Span<P>> {
 		let history = self.history();
-		let start = history.iter().rposition(|cp| cp.is_tagged(tag))?;
+		let start = history.iter().position(|cp| cp.has_context(context))?;
 		Some(history.skip(start))
 	}
 
-	/// Returns a span starting at the first checkpoint tagged with `tag`.
-	/// Returns `None` if no such tag exists in history.
-	fn history_since_first_tag(&self, tag: &str) -> Option<Span<P>> {
+	/// Returns a span starting at the last checkpoint that matches the provided
+	/// context. Returns `None` if no such context exists in history.
+	fn history_since_last_context(
+		&self,
+		context: &P::CheckpointContext,
+	) -> Option<Span<P>> {
 		let history = self.history();
-		let start = history.iter().position(|cp| cp.is_tagged(tag))?;
+		let start = history.iter().rposition(|cp| cp.has_context(context))?;
 		Some(history.skip(start))
 	}
 

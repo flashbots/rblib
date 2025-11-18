@@ -171,6 +171,10 @@ impl<P: Platform> BlockContext<P> {
 		Checkpoint::new_at_block(self.clone())
 	}
 
+	pub fn start_with(&self, context: P::CheckpointContext) -> Checkpoint<P> {
+		Checkpoint::new_with_context(self.clone(), context)
+	}
+
 	/// Given a payload checkpoint, this method builds a new payload on top of
 	/// this block that is ready to be handed back to the CL client as a response
 	/// to the `ForkchoiceUpdated` request.

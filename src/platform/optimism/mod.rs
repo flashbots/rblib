@@ -31,6 +31,7 @@ pub struct Optimism;
 
 impl Platform for Optimism {
 	type Bundle = FlashbotsBundle<Self>;
+	type CheckpointContext = ();
 	type DefaultLimits = OptimismDefaultLimits;
 	type EvmConfig = OpEvmConfig;
 	type ExtraLimits = OpLimitsExt;

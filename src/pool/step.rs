@@ -173,7 +173,10 @@ impl<P: Platform> Step<P> for AppendOrders<P> {
 	) -> ControlFlow<P> {
 		// Create an iterator that will return the best orders for the given block.
 		// The logic for selecting those orders is inside the `select.rs` module.
-		let mut orders = self.order_pool.best_orders_for_block(ctx.block());
+		let metadata = payload.context().clone();
+		let mut orders = self
+			.order_pool
+			.best_orders_for_block(ctx.block(), &metadata);
 
 		// state of one step invocation
 		let mut run = Run::new(&self, &ctx, payload);

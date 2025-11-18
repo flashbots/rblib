@@ -67,6 +67,7 @@ pub struct Ethereum;
 
 impl Platform for Ethereum {
 	type Bundle = FlashbotsBundle<Self>;
+	type CheckpointContext = ();
 	type DefaultLimits = EthereumDefaultLimits;
 	type EvmConfig = EthEvmConfig;
 	type ExtraLimits = ();

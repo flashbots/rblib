@@ -20,10 +20,11 @@ use {
 mod bundle;
 mod ethereum;
 mod limits;
+mod metadata;
 pub mod types;
 mod utils;
 
-pub use {bundle::*, ethereum::*, limits::*, utils::*};
+pub use {bundle::*, ethereum::*, limits::*, metadata::*, utils::*};
 
 #[cfg(feature = "optimism")]
 mod optimism;
@@ -89,6 +90,12 @@ pub trait Platform:
 	/// This type is used to provide platform-specific limits that are not
 	/// covered by the default `Limits` type.
 	type ExtraLimits: LimitExtension;
+
+	/// Type that allows for user-defined state to be propagated alongside
+	/// checkpoints. This state can be accessed when a checkpoint is available and
+	/// can be modified when building the next checkpoint. It is also available
+	/// when checking bundle eligibility.
+	type CheckpointContext: CheckpointContext<Self>;
 
 	/// Instantiate the EVM configuration for the platform with a given chain
 	/// specification.

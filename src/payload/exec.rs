@@ -73,12 +73,15 @@ impl<P: Platform> Executable<P> {
 		self,
 		block: &BlockContext<P>,
 		db: &DB,
+		checkpoint_context: &P::CheckpointContext,
 	) -> Result<ExecutionResult<P>, ExecutionError<P>>
 	where
 		DB: DatabaseRef<Error = ProviderError> + Debug,
 	{
 		match self {
-			Self::Bundle(bundle) => Self::execute_bundle(bundle, block, db),
+			Self::Bundle(bundle) => {
+				Self::execute_bundle(bundle, block, db, checkpoint_context)
+			}
 			Self::Transaction(tx) => Self::execute_transaction(tx, block, db)
 				.map_err(ExecutionError::InvalidTransaction),
 		}
@@ -185,11 +188,12 @@ impl<P: Platform> Executable<P> {
 		bundle: types::Bundle<P>,
 		block: &BlockContext<P>,
 		db: &DB,
+		checkpoint_context: &P::CheckpointContext,
 	) -> Result<ExecutionResult<P>, ExecutionError<P>>
 	where
 		DB: DatabaseRef<Error = ProviderError> + Debug,
 	{
-		let eligible = bundle.is_eligible(block);
+		let eligible = bundle.is_eligible(block, checkpoint_context);
 		if !eligible {
 			return Err(ExecutionError::IneligibleBundle(eligible));
 		}
@@ -562,8 +566,7 @@ mod tests {
 		let tx = test_tx::<P>(0, 0);
 		let executable = Executable::<P>::Transaction(tx);
 
-		let result = executable.execute(&block, &checkpoint);
-
+		let result = executable.execute(&block, &checkpoint, checkpoint.context());
 		assert_eq!(result.unwrap().results().len(), 1);
 	}
 
@@ -577,7 +580,12 @@ mod tests {
 		let checkpoint = block.start();
 		let (bundle, txs) = test_bundle::<P>(0, 0);
 
-		let result = Executable::execute_bundle(bundle, &block, &checkpoint);
+		let result = Executable::execute_bundle(
+			bundle,
+			&block,
+			&checkpoint,
+			checkpoint.context(),
+		);
 
 		let exec_result = result.unwrap();
 		assert_eq!(exec_result.results().len(), txs.len());
@@ -596,7 +604,12 @@ mod tests {
 		let checkpoint = block.start();
 		let (bundle, _) = test_bundle::<P>(0, 0);
 
-		let result = Executable::execute_bundle(bundle, &block, &checkpoint);
+		let result = Executable::execute_bundle(
+			bundle,
+			&block,
+			&checkpoint,
+			checkpoint.context(),
+		);
 
 		let exec_result = result.unwrap();
 		let total_gas = exec_result.gas_used();
@@ -618,7 +631,12 @@ mod tests {
 		let txs = test_txs::<P>(0, 0, 3);
 		let (bundle, _) = test_bundle::<P>(0, 0);
 
-		let result = Executable::execute_bundle(bundle, &block, &checkpoint);
+		let result = Executable::execute_bundle(
+			bundle,
+			&block,
+			&checkpoint,
+			checkpoint.context(),
+		);
 
 		let exec_result = result.unwrap();
 		assert_eq!(exec_result.results().len(), txs.len());
@@ -723,7 +741,9 @@ mod tests {
 		let tx = test_tx::<P>(0, 0);
 		let executable = Executable::<P>::Transaction(tx.clone());
 
-		let result = executable.execute(&block, &checkpoint).unwrap();
+		let result = executable
+			.execute(&block, &checkpoint, checkpoint.context())
+			.unwrap();
 
 		match result.source() {
 			Executable::Transaction(result_tx) => assert_eq!(*result_tx, tx),
@@ -742,7 +762,9 @@ mod tests {
 		let (bundle, txs) = test_bundle::<P>(0, 0);
 		let executable = Executable::<P>::Bundle(bundle);
 
-		let result = executable.execute(&block, &checkpoint).unwrap();
+		let result = executable
+			.execute(&block, &checkpoint, checkpoint.context())
+			.unwrap();
 
 		assert_eq!(result.transactions(), txs.as_slice());
 	}

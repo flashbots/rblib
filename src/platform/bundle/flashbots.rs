@@ -132,7 +132,11 @@ impl<P: Platform> Bundle<P> for FlashbotsBundle<P> {
 		bundle
 	}
 
-	fn is_eligible(&self, block: &BlockContext<P>) -> Eligibility {
+	fn is_eligible(
+		&self,
+		block: &BlockContext<P>,
+		_metadata: &P::CheckpointContext,
+	) -> Eligibility {
 		self.eligibility_at(block.timestamp(), block.number())
 	}
 

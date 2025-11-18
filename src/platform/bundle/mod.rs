@@ -48,7 +48,11 @@ pub trait Bundle<P: Platform>:
 
 	/// Checks if the bundle is eligible for inclusion in the block
 	/// before executing any of its transactions.
-	fn is_eligible(&self, block: &BlockContext<P>) -> Eligibility;
+	fn is_eligible(
+		&self,
+		block: &BlockContext<P>,
+		metadata: &P::CheckpointContext,
+	) -> Eligibility;
 
 	/// Optional check that allows the bundle to check if it knows for sure that
 	/// it will never be eligible for inclusion in any future block that is a

@@ -31,6 +31,7 @@ struct CustomPlatform;
 
 impl Platform for CustomPlatform {
 	type Bundle = CustomBundleType;
+	type CheckpointContext = ();
 	type DefaultLimits = types::DefaultLimits<Optimism>;
 	type EvmConfig = types::EvmConfig<Optimism>;
 	type ExtraLimits = types::ExtraLimits<Optimism>;
@@ -187,7 +188,12 @@ impl Bundle<CustomPlatform> for CustomBundleType {
 		}
 	}
 
-	fn is_eligible(&self, _: &BlockContext<CustomPlatform>) -> Eligibility {
+	#[expect(clippy::ignored_unit_patterns)]
+	fn is_eligible(
+		&self,
+		_: &BlockContext<CustomPlatform>,
+		_: &(),
+	) -> Eligibility {
 		Eligibility::Eligible
 	}
 

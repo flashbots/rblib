@@ -144,14 +144,13 @@ impl<P: Platform> Checkpoint<P> {
 		matches!(self.inner.mutation, Mutation::Barrier)
 	}
 
-	/// Returns true if this checkpoint has the given tag.
-	pub fn is_tagged(&self, tag: &str) -> bool {
-		self.tag().is_some_and(|t| t == tag)
+	/// Returns the metadata of this checkpoint.
+	pub fn context(&self) -> &P::CheckpointContext {
+		&self.inner.context
 	}
 
-	/// Returns the tag of this checkpoint, if any.
-	pub fn tag(&self) -> Option<&str> {
-		self.inner.tag.as_deref()
+	pub fn has_context(&self, context: &P::CheckpointContext) -> bool {
+		self.context() == context
 	}
 
 	/// If this checkpoint is created from a single transaction, returns a
@@ -187,12 +186,13 @@ impl<P: Platform> Checkpoint<P> {
 		&self,
 		executable: impl IntoExecutable<P, S>,
 	) -> Result<Self, ExecutionError<P>> {
-		let mutation = Mutation::Executable(
-			executable
-				.try_into_executable()?
-				.execute(self.block(), self)?,
-		);
-		Ok(self.apply_with(mutation, None))
+		let mutation =
+			Mutation::Executable(executable.try_into_executable()?.execute(
+				self.block(),
+				self,
+				self.context(),
+			)?);
+		Ok(self.apply_with(mutation, self.context().clone()))
 	}
 
 	/// Executes transaction on top of the current checkpoint. The execution will
@@ -210,17 +210,18 @@ impl<P: Platform> Checkpoint<P> {
 	/// Creates a new checkpoint on top of the current checkpoint and tags it.
 	/// The execution will use the cumulative state of all checkpoints in the
 	/// current checkpoint history as its state.
-	pub fn apply_with_tag<S>(
+	pub fn apply_with_context<S>(
 		&self,
 		executable: impl IntoExecutable<P, S>,
-		tag: impl Into<Box<str>>,
+		context: P::CheckpointContext,
 	) -> Result<Self, ExecutionError<P>> {
-		let mutation = Mutation::Executable(
-			executable
-				.try_into_executable()?
-				.execute(self.block(), self)?,
-		);
-		Ok(self.apply_with(mutation, Some(tag.into())))
+		let mutation =
+			Mutation::Executable(executable.try_into_executable()?.execute(
+				self.block(),
+				self,
+				&context,
+			)?);
+		Ok(self.apply_with(mutation, context))
 	}
 
 	/// Creates a new checkpoint on top of the current checkpoint that introduces
@@ -228,13 +229,13 @@ impl<P: Platform> Checkpoint<P> {
 	/// staging history.
 	#[must_use]
 	pub fn barrier(&self) -> Self {
-		Self::apply_with(self, Mutation::Barrier, None)
+		self.apply_with(Mutation::Barrier, self.context().clone())
 	}
 
 	/// Creates a new tagged barrier checkpoint on top of the current checkpoint.
 	#[must_use]
-	pub fn barrier_with_tag(&self, tag: impl Into<Box<str>>) -> Self {
-		Self::apply_with(self, Mutation::Barrier, Some(tag.into()))
+	pub fn barrier_with_context(&self, context: P::CheckpointContext) -> Self {
+		self.apply_with(Mutation::Barrier, context)
 	}
 
 	/// Given this checkpoint, this method builds a new payload on top of this
@@ -252,7 +253,11 @@ impl<P: Platform> Checkpoint<P> {
 	// Create a new checkpoint on top of the current one with the given mutation.
 	// See public builder API.
 	#[must_use]
-	fn apply_with(&self, mutation: Mutation<P>, tag: Option<Box<str>>) -> Self {
+	fn apply_with(
+		&self,
+		mutation: Mutation<P>,
+		context: P::CheckpointContext,
+	) -> Self {
 		Self {
 			inner: Arc::new(CheckpointInner {
 				block: self.inner.block.clone(),
@@ -260,7 +265,7 @@ impl<P: Platform> Checkpoint<P> {
 				depth: self.inner.depth + 1,
 				mutation,
 				created_at: Instant::now(),
-				tag,
+				context,
 			}),
 		}
 	}
@@ -277,7 +282,25 @@ impl<P: Platform> Checkpoint<P> {
 				depth: 0,
 				mutation: Mutation::Barrier,
 				created_at: Instant::now(),
-				tag: None,
+				context: Default::default(),
+			}),
+		}
+	}
+
+	/// Start a new checkpoint but seeded with the provided `CheckpointContext`.
+	#[must_use]
+	pub(super) fn new_with_context(
+		block: BlockContext<P>,
+		context: P::CheckpointContext,
+	) -> Self {
+		Self {
+			inner: Arc::new(CheckpointInner {
+				block,
+				prev: None,
+				depth: 0,
+				mutation: Mutation::Barrier,
+				created_at: Instant::now(),
+				context,
 			}),
 		}
 	}
@@ -306,7 +329,7 @@ impl<P: Platform> IntoIterator for &Checkpoint<P> {
 
 /// Describes the type of state mutation that was applied to the previous
 /// checkpoint to create this checkpoint.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 enum Mutation<P: Platform> {
 	/// A checkpoint that indicates that any prior checkpoints are immutable and
 	/// should not be discarded or reordered. An example of this would be placing
@@ -349,10 +372,12 @@ struct CheckpointInner<P: Platform> {
 	/// The timestamp when this checkpoint was created.
 	created_at: Instant,
 
-	/// Optional tag for this checkpoint. Tags are metadata used to mark
-	/// checkpoints for later reference in history queries and display/debug
-	/// output.
-	tag: Option<Box<str>>,
+	// /// Optional tag for this checkpoint. Tags are metadata used to mark
+	// /// checkpoints for later reference in history queries and display/debug
+	// /// output.
+	// tag: Option<Box<str>>,
+	/// User-defined metadata for this checkpoint.
+	context: P::CheckpointContext,
 }
 
 /// Converts a checkpoint into a vector of transactions that were applied to
@@ -496,7 +521,7 @@ impl<P: Platform> Debug for Checkpoint<P> {
 		f.debug_struct("Checkpoint")
 			.field("depth", &self.depth())
 			.field("block", &format!("{} + 1", self.block().parent().hash()))
-			.field("tag", &self.tag())
+			.field("metadata", &self.context())
 			.field(
 				"txs",
 				&self
@@ -512,10 +537,7 @@ impl<P: Platform> Debug for Checkpoint<P> {
 
 impl<P: Platform> Display for Checkpoint<P> {
 	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-		let tag_suffix = self
-			.tag()
-			.map(|tag| format!(" '{tag}'"))
-			.unwrap_or_default();
+		let metadata_suffix = format!("{:?}", self.context());
 
 		let Mutation::Executable(exec_result) = &self.inner.mutation else {
 			if self.depth() == 0 {
@@ -527,7 +549,12 @@ impl<P: Platform> Display for Checkpoint<P> {
 			// applied to it.
 			return match &self.inner.mutation {
 				Mutation::Barrier => {
-					write!(f, "[{}] barrier{}", self.depth(), tag_suffix)
+					write!(
+						f,
+						"[{}] barrier, metadata={}",
+						self.depth(),
+						metadata_suffix
+					)
 				}
 				Mutation::Executable(_) => {
 					unreachable!("Executable variant handled above")
@@ -538,7 +565,7 @@ impl<P: Platform> Display for Checkpoint<P> {
 		match exec_result.source() {
 			Executable::Transaction(tx) => write!(
 				f,
-				"[{}] tx {} ({}, {} gas){}",
+				"[{}] tx {} ({}, {} gas)",
 				self.depth(),
 				tx.tx_hash(),
 				match exec_result.results()[0] {
@@ -547,15 +574,14 @@ impl<P: Platform> Display for Checkpoint<P> {
 					types::TransactionExecutionResult::<P>::Halt { .. } => "halt",
 				},
 				self.gas_used(),
-				tag_suffix,
 			),
 			Executable::Bundle(bundle) => write!(
 				f,
-				"[{}] (bundle {} txs, {} gas){}",
+				"[{}] (bundle {} txs, {} gas) metadata={}",
 				self.depth(),
 				bundle.transactions().len(),
 				self.gas_used(),
-				tag_suffix,
+				metadata_suffix
 			),
 		}
 	}
@@ -614,14 +640,13 @@ mod tests {
 			let root = block.start();
 
 			let before = Instant::now();
-			let checkpoint = root.apply_with(Mutation::Barrier, None);
+			let checkpoint = root.barrier();
 			let after = Instant::now();
 
 			assert_eq!(checkpoint.block(), &block);
 			assert_eq!(checkpoint.prev(), Some(root.clone()));
 			assert_eq!(checkpoint.depth(), root.depth() + 1);
 			assert!(checkpoint.is_barrier());
-			assert!(checkpoint.tag().is_none());
 			assert!((before..=after).contains(&checkpoint.created_at()));
 		}
 	}
@@ -656,7 +681,7 @@ mod tests {
 		let res = tx
 			.try_into_executable()
 			.unwrap()
-			.execute(&block, &root)
+			.execute(&block, &root, root.context())
 			.unwrap();
 		assert_eq!(checkpoint.result(), Some(&res));
 		assert_eq!(checkpoint.state(), Some(res.state()));
@@ -689,7 +714,7 @@ mod tests {
 		let res = bundle
 			.try_into_executable()
 			.unwrap()
-			.execute(&block, &root)
+			.execute(&block, &root, root.context())
 			.unwrap();
 		assert_eq!(checkpoint.result(), Some(&res));
 		assert_eq!(checkpoint.state(), Some(res.state()));
@@ -704,23 +729,6 @@ mod tests {
 		let fail_bundle = bundle;
 		let checkpoint_res = checkpoint.apply(fail_bundle);
 		assert!(checkpoint_res.is_err());
-	}
-
-	#[test]
-	fn test_apply_with_tag() {
-		let tag = "tagged";
-		let block = BlockContext::<Ethereum>::mocked();
-		let root = block.start();
-		assert!(root.tag().is_none());
-		assert!(!root.is_tagged("x"));
-
-		let checkpoint = root.barrier_with_tag(tag);
-		assert!(checkpoint.is_tagged(tag));
-		assert_eq!(checkpoint.tag(), Some(tag));
-
-		let checkpoint =
-			root.apply_with_tag(test_tx::<Ethereum>(0, 0), tag).unwrap();
-		assert_eq!(checkpoint.tag(), Some(tag));
 	}
 
 	#[test]
