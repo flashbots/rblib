@@ -339,7 +339,7 @@ impl<P: Platform> Executable<P> {
 	///   [`Bundle::is_allowed_to_fail`], and failure outcomes are handled by
 	///   including them if allowed.
 	///
-	/// See truth table (same as execute_bundle):
+	/// See truth table (same as `execute_bundle`):
 	/// | success | `allowed_to_fail` | optional | Action  |
 	/// | ------: | :---------------: | :------: | :------ |
 	/// |    true |    *don’t care*   |   *any*  | include |
@@ -347,8 +347,8 @@ impl<P: Platform> Executable<P> {
 	/// |   false |       false       |   true   | discard |
 	/// |   false |       false       |   false  | error   |
 	///
-	/// - Post-execution validation is skipped for simulation, as no state changes
-	///   are persisted.
+	/// Post-execution validation is skipped for simulation, as no state changes
+	/// are persisted.
 	fn simulate_bundle<DB>(
 		bundle: types::Bundle<P>,
 		block: &BlockContext<P>,
