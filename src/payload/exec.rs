@@ -275,7 +275,7 @@ impl<P: Platform> Executable<P> {
 		DB: DatabaseRef<Error = ProviderError> + Debug,
 	{
 		match self {
-			Self::Bundle(_) => unreachable!("asd"),
+			Self::Bundle(bundle) => Self::simulate_bundle(bundle, block, db),
 			Self::Transaction(tx) => Self::simulate_transaction(tx, block, db)
 				.map_err(ExecutionError::InvalidTransaction),
 		}
@@ -309,6 +309,110 @@ impl<P: Platform> Executable<P> {
 		Ok(ExecutionResult {
 			source: Executable::Transaction(tx),
 			results: vec![result.result],
+			state: BundleState::default(),
+		})
+	}
+
+	/// Simulates a bundle of transactions and returns the simulated execution
+	/// outcome of all transactions in the bundle. No state changes are
+	/// persisted.
+	///
+	/// Notes:
+	/// - Bundles that are not eligible for execution in the current block are
+	///   considered invalid, and no execution result will be produced.
+	///
+	/// - All transactions in the bundle are simulated in the order in which they
+	///   were defined in the bundle.
+	///
+	/// - Each transaction is simulated on the in-memory state produced by the
+	///   previous transaction in the bundle, but changes are not committed or
+	///   persisted.
+	///
+	/// - Transactions that cause EVM errors will invalidate the bundle, and no
+	///   execution result will be produced. Bundle transactions can be marked
+	///   optional [`Bundle::is_optional`], and invalid outcomes are handled by
+	///   discarding them.
+	///
+	/// - Transactions that fail gracefully (revert or halt) and are not optional
+	///   will invalidate the bundle, and no execution result will be produced.
+	///   Bundle transactions can be marked as allowed to fail
+	///   [`Bundle::is_allowed_to_fail`], and failure outcomes are handled by
+	///   including them if allowed.
+	///
+	/// See truth table (same as execute_bundle):
+	/// | success | `allowed_to_fail` | optional | Action  |
+	/// | ------: | :---------------: | :------: | :------ |
+	/// |    true |    *don’t care*   |   *any*  | include |
+	/// |   false |        true       |   *any*  | include |
+	/// |   false |       false       |   true   | discard |
+	/// |   false |       false       |   false  | error   |
+	///
+	/// - Post-execution validation is skipped for simulation, as no state changes
+	///   are persisted.
+	fn simulate_bundle<DB>(
+		bundle: types::Bundle<P>,
+		block: &BlockContext<P>,
+		db: &DB,
+	) -> Result<ExecutionResult<P>, ExecutionError<P>>
+	where
+		DB: DatabaseRef<Error = ProviderError> + Debug,
+	{
+		let eligible = bundle.is_eligible(block);
+		if !eligible {
+			return Err(ExecutionError::IneligibleBundle(eligible));
+		}
+
+		let evm_env = block.evm_env();
+		let evm_config = block.evm_config();
+		let mut state = State::builder().with_database(WrapDatabaseRef(db)).build();
+
+		let mut discarded = Vec::new();
+		let mut results = Vec::with_capacity(bundle.transactions().len());
+
+		for transaction in bundle.transactions_encoded() {
+			let tx_hash = *transaction.tx_hash();
+			let optional = bundle.is_optional(&tx_hash);
+			let allowed_to_fail = bundle.is_allowed_to_fail(&tx_hash);
+
+			let result = evm_config
+				.evm_with_env(&mut state, evm_env.clone())
+				.transact(&transaction);
+
+			match result {
+				// Valid transaction or allowed to fail: include it in the bundle
+				Ok(ExecResultAndState { result, .. })
+					if result.is_success() || allowed_to_fail =>
+				{
+					results.push(result);
+					// Note: No db.commit(state) for simulation
+				}
+				// Optional failing transaction, not allowed to fail
+				// or optional invalid transaction: discard it
+				Ok(_) | Err(_) if optional => {
+					discarded.push(tx_hash);
+				}
+				// Non-Optional failing transaction, not allowed to fail: invalidate the
+				// bundle
+				Ok(_) => {
+					return Err(ExecutionError::BundleTransactionReverted(tx_hash));
+				}
+				// Non-Optional invalid transaction: invalidate the bundle
+				Err(err) => {
+					return Err(ExecutionError::InvalidBundleTransaction(tx_hash, err));
+				}
+			}
+		}
+
+		// Reduce the bundle by removing discarded transactions
+		let bundle = discarded
+			.into_iter()
+			.fold(bundle, |b, tx| b.without_transaction(tx));
+
+		// Return ExecutionResult with simulated results and default state (no
+		// persistence)
+		Ok(ExecutionResult {
+			source: Executable::Bundle(bundle),
+			results,
 			state: BundleState::default(),
 		})
 	}
