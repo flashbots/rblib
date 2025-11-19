@@ -325,8 +325,8 @@ impl<P: Platform> Executable<P> {
 	///   were defined in the bundle.
 	///
 	/// - Each transaction is simulated on the in-memory state produced by the
-	///   previous transaction in the bundle, but changes are not committed or
-	///   persisted.
+	///   previous transaction in the bundle. State changes are applied in-memory
+	///   for subsequent transactions, but the final state is not persisted.
 	///
 	/// - Transactions that cause EVM errors will invalidate the bundle, and no
 	///   execution result will be produced. Bundle transactions can be marked
@@ -380,11 +380,13 @@ impl<P: Platform> Executable<P> {
 
 			match result {
 				// Valid transaction or allowed to fail: include it in the bundle
-				Ok(ExecResultAndState { result, .. })
-					if result.is_success() || allowed_to_fail =>
-				{
+				Ok(ExecResultAndState {
+					result,
+					state: tx_state,
+				}) if result.is_success() || allowed_to_fail => {
 					results.push(result);
-					// Note: No db.commit(state) for simulation
+					// State changes committed in-memory but not returned (simulation)
+					state.commit(tx_state);
 				}
 				// Optional failing transaction, not allowed to fail
 				// or optional invalid transaction: discard it
