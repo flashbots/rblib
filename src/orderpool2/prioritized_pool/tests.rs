@@ -12,7 +12,7 @@ impl From<HashMap<Address, u64>> for PrioritizedOrderpoolHashMapNonces {
 	}
 }
 
-impl PrioritizedOrderpoolNonceSource for PrioritizedOrderpoolHashMapNonces {
+impl OrderpoolNonceSource for PrioritizedOrderpoolHashMapNonces {
 	type NonceError = Infallible;
 
 	fn nonce(&self, address: &Address) -> Result<u64, Self::NonceError> {
@@ -27,7 +27,7 @@ pub struct PrioritizedOrderpoolTestBundle {
 	profit: u64,
 }
 
-impl PrioritizedOrderpoolOrder for PrioritizedOrderpoolTestBundle {
+impl OrderpoolOrder for PrioritizedOrderpoolTestBundle {
 	type ID = u64;
 
 	fn id(&self) -> Self::ID {

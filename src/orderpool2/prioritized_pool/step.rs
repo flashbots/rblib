@@ -1,9 +1,8 @@
 /// Example usage of `prioritized_pool` using pipelines
 use {
 	super::{
+		super::{OrderpoolNonceSource, OrderpoolOrder},
 		PrioritizedOrderpool,
-		PrioritizedOrderpoolNonceSource,
-		PrioritizedOrderpoolOrder,
 		PrioritizedOrderpoolPriority,
 	},
 	crate::{
@@ -11,8 +10,9 @@ use {
 			consensus::Transaction,
 			primitives::{Address, B256},
 		},
+		orderpool2::{AccountNonce, BundleNonce},
+		payload::CheckpointExt,
 		prelude::{Bundle, Checkpoint, ControlFlow, Platform, Step, StepContext},
-		primitives::BundleNonce,
 		reth,
 	},
 	parking_lot::Mutex,
@@ -58,7 +58,7 @@ where
 	}
 }
 
-impl<B, P> PrioritizedOrderpoolOrder for BundleWithNonces<B, P>
+impl<B, P> OrderpoolOrder for BundleWithNonces<B, P>
 where
 	B: Bundle<P>,
 	P: Platform,
@@ -74,7 +74,7 @@ where
 	}
 }
 
-impl<P: Platform> PrioritizedOrderpoolNonceSource for Checkpoint<P> {
+impl<P: Platform> OrderpoolNonceSource for Checkpoint<P> {
 	type NonceError = reth::errors::ProviderError;
 
 	fn nonce(&self, address: &Address) -> Result<u64, Self::NonceError> {
@@ -199,11 +199,15 @@ where
 		// try to include all orders
 		while let Some(order) = orderpool.pop_order() {
 			if let Ok(new) = payload.apply(order.bundle) {
-				if let Some(result) = new.result() {
-					orderpool
-						.update_onchain_nonces(result.changed_nonces(), &new)
-						.unwrap_or_default();
-				}
+				let changed_nonces: Vec<_> = new
+					.changed_nonces()
+					.into_iter()
+					.map(|(account, nonce)| AccountNonce { account, nonce })
+					.collect();
+
+				orderpool
+					.update_onchain_nonces(&changed_nonces, &new)
+					.unwrap_or_default();
 				payload = new;
 			}
 		}

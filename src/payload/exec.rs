@@ -1,10 +1,7 @@
 use {
-	crate::{alloy, prelude::*, primitives::AccountNonce, reth},
+	crate::{alloy, prelude::*, reth},
 	alloy::{
-		consensus::{
-			crypto::RecoveryError,
-			transaction::{Transaction, TxHashRef},
-		},
+		consensus::{crypto::RecoveryError, transaction::TxHashRef},
 		primitives::{B256, TxHash},
 	},
 	reth::{
@@ -120,13 +117,11 @@ impl<P: Platform> Executable<P> {
 		state.merge_transitions(BundleRetention::Reverts);
 
 		let state = state.take_bundle();
-		let nonces_after_execution = extract_changed_nonces_for_executable(&state);
 
 		Ok(ExecutionResult {
 			source: Executable::Transaction(tx),
 			results: vec![result],
 			state,
-			nonces_after_execution,
 		})
 	}
 
@@ -260,13 +255,10 @@ impl<P: Platform> Executable<P> {
 			.validate_post_execution(&state, block)
 			.map_err(ExecutionError::InvalidBundlePostExecutionState)?;
 
-		let nonces_after_execution = extract_changed_nonces_for_executable(&state);
-
 		Ok(ExecutionResult {
 			source: Executable::Bundle(bundle),
 			results,
 			state,
-			nonces_after_execution,
 		})
 	}
 
@@ -315,17 +307,11 @@ impl<P: Platform> Executable<P> {
 			.evm_config()
 			.evm_with_env(&mut state, block.evm_env().clone())
 			.transact(&tx)?;
-		// this might be incomplete because tx can change nonce of another account
-		let changed_nonce = AccountNonce {
-			account: tx.signer(),
-			nonce: tx.nonce() + 1,
-		};
 
 		Ok(ExecutionResult {
 			source: Executable::Transaction(tx),
 			results: vec![result.result],
 			state: BundleState::default(),
-			nonces_after_execution: vec![changed_nonce],
 		})
 	}
 }
@@ -453,9 +439,6 @@ pub struct ExecutionResult<P: Platform> {
 
 	/// The aggregated state executing all transactions from the source.
 	state: BundleState,
-
-	/// Updated nonces
-	nonces_after_execution: Vec<AccountNonce>,
 }
 
 impl<P: Platform> ExecutionResult<P> {
@@ -490,36 +473,6 @@ impl<P: Platform> ExecutionResult<P> {
 	pub fn gas_used(&self) -> u64 {
 		self.results.iter().map(|r| r.gas_used()).sum()
 	}
-
-	/// Account nonces changed after transaction execution.
-	/// If transactions change nonces from N to N+1, this would return N+1.
-	pub fn changed_nonces(&self) -> &[AccountNonce] {
-		&self.nonces_after_execution
-	}
-}
-
-/// Get changed nonces from bundle state created as a result of execution of one
-/// executable
-fn extract_changed_nonces_for_executable(
-	bundle_state: &BundleState,
-) -> Vec<AccountNonce> {
-	let mut result = Vec::new();
-	for (address, data) in bundle_state.state() {
-		let old_nonce = data
-			.original_info
-			.as_ref()
-			.map(|a| a.nonce)
-			.unwrap_or_default();
-		let new_nonce = data.info.as_ref().map(|a| a.nonce).unwrap_or_default();
-		if old_nonce == new_nonce {
-			continue;
-		}
-		result.push(AccountNonce {
-			account: *address,
-			nonce: new_nonce,
-		});
-	}
-	result
 }
 
 #[cfg(test)]

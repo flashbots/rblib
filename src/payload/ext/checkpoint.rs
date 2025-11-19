@@ -5,7 +5,11 @@ use {
 			primitives::{Address, B256, TxHash, U256},
 		},
 		prelude::*,
-		reth::{errors::ProviderError, primitives::Recovered, revm::DatabaseRef},
+		reth::{
+			errors::ProviderError,
+			primitives::Recovered,
+			revm::{DatabaseRef, db::BundleState},
+		},
 	},
 	itertools::Itertools,
 	std::time::Instant,
@@ -151,6 +155,10 @@ pub trait CheckpointExt<P: Platform>: super::sealed::Sealed {
 		let start = history.iter().position(|cp| cp.is_tagged(tag))?;
 		Some(history.skip(start))
 	}
+
+	/// Account nonces changed after transactions execution.
+	/// If transactions changes nonces nonces from N to N+1 this would return N+1.
+	fn changed_nonces(&self) -> Vec<(Address, u64)>;
 }
 
 impl<P: Platform> CheckpointExt<P> for Checkpoint<P> {
@@ -326,6 +334,34 @@ impl<P: Platform> CheckpointExt<P> for Checkpoint<P> {
 	fn building_since(&self) -> Instant {
 		self.root().created_at()
 	}
+
+	fn changed_nonces(&self) -> Vec<(Address, u64)> {
+		let Some(res) = self.result() else {
+			return Vec::new();
+		};
+		extract_changed_nonces_for_executable(res.state())
+	}
+}
+
+/// Get changed nonces from bundle state created as a result of execution of one
+/// executable
+fn extract_changed_nonces_for_executable(
+	bundle_state: &BundleState,
+) -> Vec<(Address, u64)> {
+	let mut result = Vec::new();
+	for (address, data) in bundle_state.state() {
+		let old_nonce = data
+			.original_info
+			.as_ref()
+			.map(|a| a.nonce)
+			.unwrap_or_default();
+		let new_nonce = data.info.as_ref().map(|a| a.nonce).unwrap_or_default();
+		if old_nonce == new_nonce {
+			continue;
+		}
+		result.push((*address, new_nonce));
+	}
+	result
 }
 
 #[cfg(test)]

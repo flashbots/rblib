@@ -11,39 +11,24 @@
 /// 4. Update onchain nonces after each successful commit using
 ///    `update_onchain_nonces`
 use {
-	crate::{
-		alloy::primitives::Address,
-		primitives::{AccountNonce, BundleNonce},
-	},
+	crate::alloy::primitives::Address,
 	priority_queue::PriorityQueue,
-	std::{
-		collections::{HashMap, HashSet, hash_map::Entry},
-		hash::Hash,
-	},
+	std::collections::{HashMap, HashSet, hash_map::Entry},
 };
+
+use super::{AccountNonce, BundleNonce, OrderpoolNonceSource, OrderpoolOrder};
 
 pub mod step;
 #[cfg(test)]
 mod tests;
-
-pub trait PrioritizedOrderpoolOrder {
-	type ID: Hash + Eq;
-	fn id(&self) -> Self::ID;
-	fn nonces(&self) -> Vec<BundleNonce>;
-}
 
 pub trait PrioritizedOrderpoolPriority: Ord + Clone + Send + Sync {
 	type Order;
 	fn new(order: &Self::Order) -> Self;
 }
 
-pub trait PrioritizedOrderpoolNonceSource {
-	type NonceError;
-	fn nonce(&self, address: &Address) -> Result<u64, Self::NonceError>;
-}
-
 #[derive(Debug, Clone)]
-pub struct PrioritizedOrderpool<Priority, Order: PrioritizedOrderpoolOrder> {
+pub struct PrioritizedOrderpool<Priority, Order: OrderpoolOrder> {
 	/// Ready (all nonce matching (or not matched but optional)) to execute
 	/// orders sorted
 	main_queue: PriorityQueue<Order::ID, Priority>,
@@ -65,7 +50,7 @@ pub struct PrioritizedOrderpool<Priority, Order: PrioritizedOrderpoolOrder> {
 	orders: HashMap<Order::ID, Order>,
 }
 
-impl<Priority: Ord, Order: PrioritizedOrderpoolOrder> Default
+impl<Priority: Ord, Order: OrderpoolOrder> Default
 	for PrioritizedOrderpool<Priority, Order>
 {
 	fn default() -> Self {
@@ -82,7 +67,7 @@ impl<Priority: Ord, Order: PrioritizedOrderpoolOrder> Default
 impl<Priority, Order> PrioritizedOrderpool<Priority, Order>
 where
 	Priority: PrioritizedOrderpoolPriority<Order = Order>,
-	Order: PrioritizedOrderpoolOrder,
+	Order: OrderpoolOrder,
 {
 	/// Removes order from the pool
 	/// # Panics
@@ -115,7 +100,7 @@ where
 	/// arguments here
 	/// # Panics
 	/// Panics if implementation has a bug
-	pub fn update_onchain_nonces<NonceSource: PrioritizedOrderpoolNonceSource>(
+	pub fn update_onchain_nonces<NonceSource: OrderpoolNonceSource>(
 		&mut self,
 		new_nonces: &[AccountNonce],
 		nonce_source: &NonceSource,
@@ -177,7 +162,7 @@ where
 		self.orders.remove(id)
 	}
 
-	fn nonce<NonceSource: PrioritizedOrderpoolNonceSource>(
+	fn nonce<NonceSource: OrderpoolNonceSource>(
 		&mut self,
 		address: &Address,
 		nonce_source: &NonceSource,
@@ -192,7 +177,7 @@ where
 		}
 	}
 
-	pub fn insert_order<NonceSource: PrioritizedOrderpoolNonceSource>(
+	pub fn insert_order<NonceSource: OrderpoolNonceSource>(
 		&mut self,
 		order: Order,
 		nonce_source: &NonceSource,
