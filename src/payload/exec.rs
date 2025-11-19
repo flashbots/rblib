@@ -116,12 +116,10 @@ impl<P: Platform> Executable<P> {
 
 		state.merge_transitions(BundleRetention::Reverts);
 
-		let state = state.take_bundle();
-
 		Ok(ExecutionResult {
 			source: Executable::Transaction(tx),
 			results: vec![result],
-			state,
+			state: state.take_bundle(),
 		})
 	}
 
