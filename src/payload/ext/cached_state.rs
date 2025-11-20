@@ -278,7 +278,6 @@ impl ExecutionCache {
 	}
 
 	/// Insert storage value into hierarchical cache
-	#[expect(dead_code)]
 	pub fn insert_storage(
 		&self,
 		address: Address,
@@ -422,6 +421,7 @@ impl AccountStorageCache {
 	}
 
 	/// Insert a storage value
+	#[expect(dead_code)]
 	pub(crate) fn insert_storage(
 		&self,
 		key: StorageKey,
