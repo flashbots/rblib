@@ -278,6 +278,7 @@ impl ExecutionCache {
 	}
 
 	/// Insert storage value into hierarchical cache
+	#[expect(dead_code)]
 	pub fn insert_storage(
 		&self,
 		address: Address,
@@ -331,6 +332,7 @@ impl ExecutionCache {
 	///
 	/// Returns an error if the state updates are inconsistent and should be
 	/// discarded.
+	#[expect(clippy::result_unit_err)]
 	pub fn insert_state(&self, state_updates: &BundleState) -> Result<(), ()> {
 		// Insert bytecodes
 		for (code_hash, bytecode) in &state_updates.contracts {
