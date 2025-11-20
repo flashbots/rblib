@@ -298,10 +298,8 @@ impl ExecutionCache {
 	where
 		I: IntoIterator<Item = (StorageKey, Option<StorageValue>)>,
 	{
-		let account_cache = self
-			.storage
-			.entry(address)
-			.or_insert_with(Default::default);
+		let account_cache =
+			self.storage.entry(address).or_insert_with(Default::default);
 
 		for (key, value) in storage_entries {
 			account_cache.slots.insert(key, value);
