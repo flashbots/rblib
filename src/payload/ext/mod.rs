@@ -6,6 +6,7 @@
 //! but are not strictly necessary for the core functionality.
 
 mod block;
+mod cached_state;
 mod checkpoint;
 mod span;
 
