@@ -402,7 +402,7 @@ impl ExecutionCache {
 /// Each account gets its own `AccountStorageCache` to store accessed storage
 /// slots.
 #[derive(Debug, Clone)]
-pub struct AccountStorageCache {
+pub(super) struct AccountStorageCache {
 	/// Map of storage keys to their cached values.
 	slots: DashMap<StorageKey, Option<StorageValue>>,
 }
