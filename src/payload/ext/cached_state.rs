@@ -452,6 +452,7 @@ mod tests {
 		},
 		rand::Rng,
 		std::mem::size_of,
+		tracing::info,
 	};
 
 	mod tracking_allocator {
@@ -524,7 +525,7 @@ mod tests {
 	fn measure_storage_cache_overhead() {
 		let (base_overhead, cache) =
 			measure_allocation(|| AccountStorageCache::new());
-		println!("Base AccountStorageCache overhead: {base_overhead} bytes");
+		info!("Base AccountStorageCache overhead: {base_overhead} bytes");
 		let mut rng = rand::rng();
 
 		let key = StorageKey::random();
@@ -532,7 +533,7 @@ mod tests {
 		let (first_slot, _) = measure_allocation(|| {
 			cache.insert_storage(key, Some(value));
 		});
-		println!("First slot insertion overhead: {first_slot} bytes");
+		info!("First slot insertion overhead: {first_slot} bytes");
 
 		const TOTAL_SLOTS: usize = 10_000;
 		let (test_slots, _) = measure_allocation(|| {
@@ -542,20 +543,20 @@ mod tests {
 				cache.insert_storage(key, Some(value));
 			}
 		});
-		println!(
+		info!(
 			"Average overhead over {} slots: {} bytes",
 			TOTAL_SLOTS,
 			test_slots / TOTAL_SLOTS
 		);
 
-		println!("\nTheoretical sizes:");
-		println!("StorageKey size: {} bytes", size_of::<StorageKey>());
-		println!("StorageValue size: {} bytes", size_of::<StorageValue>());
-		println!(
+		info!("\nTheoretical sizes:");
+		info!("StorageKey size: {} bytes", size_of::<StorageKey>());
+		info!("StorageValue size: {} bytes", size_of::<StorageValue>());
+		info!(
 			"Option<StorageValue> size: {} bytes",
 			size_of::<Option<StorageValue>>()
 		);
-		println!("Option<B256> size: {} bytes", size_of::<Option<B256>>());
+		info!("Option<B256> size: {} bytes", size_of::<Option<B256>>());
 	}
 
 	#[test]
