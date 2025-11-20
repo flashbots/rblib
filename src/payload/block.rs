@@ -83,7 +83,8 @@ impl<P: Platform> BlockContext<P> {
 
 		// TODO: Prefill execution_cached with bundle state from the previous block
 		let execution_cached = ExecutionCache::default();
-		let provider = CachedStateProvider::new_with_caches(base_state, execution_cached);
+		let provider =
+			CachedStateProvider::new_with_caches(base_state, execution_cached);
 		let mut base_state = State::builder()
 			.with_database(StateProviderDatabase(provider))
 			.with_bundle_update()
@@ -205,7 +206,8 @@ struct BlockContextInner<P: Platform> {
 	///
 	/// This state has no changes made to it during the payload building process
 	/// through any of the created checkpoints.
-	base_state: State<StateProviderDatabase<CachedStateProvider<StateProviderBox>>>,
+	base_state:
+		State<StateProviderDatabase<CachedStateProvider<StateProviderBox>>>,
 
 	/// The EVM factory configured for the environment in which we are building
 	/// the payload. This type is used to create individual EVM instances that

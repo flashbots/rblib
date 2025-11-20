@@ -1,20 +1,41 @@
 //! Database adapters for payload building.
 // Originated from reth https://github.com/paradigmxyz/reth/blob/b72bb6790a5f7ada75282e52b80f986d9717e698/crates/revm/src/cached.rs
 
-use reth_ethereum::evm::revm::db::BundleState;
-use reth_ethereum::primitives::{Account, Bytecode};
-use reth_ethereum::trie::{AccountProof, HashedPostState, HashedStorage, MultiProof, MultiProofTargets, StorageMultiProof, StorageProof, TrieInput};
-use reth_ethereum::trie::updates::TrieUpdates;
 use {
 	crate::{
-		alloy::primitives::{Address, B256},
-		reth::ethereum::provider::{AccountReader, BlockHashReader, BytecodeReader, HashedPostStateProvider, StateProofProvider, StateRootProvider, StorageRootProvider, StateProvider},
-		reth::errors::ProviderResult,
+		alloy::primitives::{Address, B256, StorageKey, StorageValue},
+		reth::{
+			errors::ProviderResult,
+			ethereum::provider::{
+				AccountReader,
+				BlockHashReader,
+				BytecodeReader,
+				HashedPostStateProvider,
+				StateProofProvider,
+				StateProvider,
+				StateRootProvider,
+				StorageRootProvider,
+			},
+		},
 	},
 	dashmap::DashMap,
+	reth_ethereum::{
+		evm::revm::db::BundleState,
+		primitives::{Account, Bytecode},
+		trie::{
+			AccountProof,
+			HashedPostState,
+			HashedStorage,
+			MultiProof,
+			MultiProofTargets,
+			StorageMultiProof,
+			StorageProof,
+			TrieInput,
+			updates::TrieUpdates,
+		},
+	},
 	std::sync::Arc,
 };
-use crate::alloy::primitives::{StorageKey, StorageValue};
 
 /// A wrapper of a state provider and a shared cache.
 pub struct CachedStateProvider<S> {
@@ -29,20 +50,26 @@ impl<S> CachedStateProvider<S>
 where
 	S: StateProvider,
 {
-	/// Creates a new [`CachedStateProvider`] from an [`ExecutionCache`], state provider, and
-	/// [`CachedStateMetrics`].
+	/// Creates a new [`CachedStateProvider`] from an [`ExecutionCache`], state
+	/// provider, and [`CachedStateMetrics`].
 	pub const fn new_with_caches(
 		state_provider: S,
 		caches: ExecutionCache,
 	) -> Self {
-		Self { state_provider, caches }
+		Self {
+			state_provider,
+			caches,
+		}
 	}
 }
 
 impl<S: AccountReader> AccountReader for CachedStateProvider<S> {
-	fn basic_account(&self, address: &Address) -> ProviderResult<Option<Account>> {
+	fn basic_account(
+		&self,
+		address: &Address,
+	) -> ProviderResult<Option<Account>> {
 		if let Some(res) = self.caches.account_cache.get(address) {
-			return Ok(*res)
+			return Ok(*res);
 		}
 
 		let res = self.state_provider.basic_account(address)?;
@@ -74,20 +101,19 @@ impl<S: StateProvider> StateProvider for CachedStateProvider<S> {
 				self.caches.insert_storage(account, storage_key, final_res);
 				Ok(final_res)
 			}
-			SlotStatus::Empty => {
-				Ok(None)
-			}
-			SlotStatus::Value(value) => {
-				Ok(Some(value))
-			}
+			SlotStatus::Empty => Ok(None),
+			SlotStatus::Value(value) => Ok(Some(value)),
 		}
 	}
 }
 
 impl<S: BytecodeReader> BytecodeReader for CachedStateProvider<S> {
-	fn bytecode_by_hash(&self, code_hash: &B256) -> ProviderResult<Option<Bytecode>> {
+	fn bytecode_by_hash(
+		&self,
+		code_hash: &B256,
+	) -> ProviderResult<Option<Bytecode>> {
 		if let Some(res) = self.caches.code_cache.get(code_hash).as_deref() {
-			return Ok(res.clone())
+			return Ok(res.clone());
 		}
 
 		let final_res = self.state_provider.bytecode_by_hash(code_hash)?;
@@ -116,7 +142,9 @@ impl<S: StateRootProvider> StateRootProvider for CachedStateProvider<S> {
 		&self,
 		input: TrieInput,
 	) -> ProviderResult<(B256, TrieUpdates)> {
-		self.state_provider.state_root_from_nodes_with_updates(input)
+		self
+			.state_provider
+			.state_root_from_nodes_with_updates(input)
 	}
 }
 
@@ -162,33 +190,41 @@ impl<S: StorageRootProvider> StorageRootProvider for CachedStateProvider<S> {
 		slot: B256,
 		hashed_storage: HashedStorage,
 	) -> ProviderResult<StorageProof> {
-		self.state_provider.storage_proof(address, slot, hashed_storage)
+		self
+			.state_provider
+			.storage_proof(address, slot, hashed_storage)
 	}
 
 	/// Generate a storage multiproof for multiple storage slots.
 	///
-	/// A **storage multiproof** is a cryptographic proof that can verify the values
-	/// of multiple storage slots for a single account in a single verification step.
-	/// Instead of generating separate proofs for each slot (which would be inefficient),
-	/// a multiproof bundles the necessary trie nodes to prove all requested slots.
+	/// A **storage multiproof** is a cryptographic proof that can verify the
+	/// values of multiple storage slots for a single account in a single
+	/// verification step. Instead of generating separate proofs for each slot
+	/// (which would be inefficient), a multiproof bundles the necessary trie
+	/// nodes to prove all requested slots.
 	///
 	/// ## How it works:
 	/// 1. Takes an account address and a list of storage slot keys
 	/// 2. Traverses the account's storage trie to collect proof nodes
-	/// 3. Returns a [`StorageMultiProof`] containing the minimal set of trie nodes needed to verify
-	///    all the requested storage slots
+	/// 3. Returns a [`StorageMultiProof`] containing the minimal set of trie
+	///    nodes needed to verify all the requested storage slots
 	fn storage_multiproof(
 		&self,
 		address: Address,
 		slots: &[B256],
 		hashed_storage: HashedStorage,
 	) -> ProviderResult<StorageMultiProof> {
-		self.state_provider.storage_multiproof(address, slots, hashed_storage)
+		self
+			.state_provider
+			.storage_multiproof(address, slots, hashed_storage)
 	}
 }
 
 impl<S: BlockHashReader> BlockHashReader for CachedStateProvider<S> {
-	fn block_hash(&self, number: crate::alloy::primitives::BlockNumber) -> ProviderResult<Option<B256>> {
+	fn block_hash(
+		&self,
+		number: crate::alloy::primitives::BlockNumber,
+	) -> ProviderResult<Option<B256>> {
 		self.state_provider.block_hash(number)
 	}
 
@@ -201,7 +237,9 @@ impl<S: BlockHashReader> BlockHashReader for CachedStateProvider<S> {
 	}
 }
 
-impl<S: HashedPostStateProvider> HashedPostStateProvider for CachedStateProvider<S> {
+impl<S: HashedPostStateProvider> HashedPostStateProvider
+	for CachedStateProvider<S>
+{
 	fn hashed_post_state(&self, bundle_state: &BundleState) -> HashedPostState {
 		self.state_provider.hashed_post_state(bundle_state)
 	}
@@ -209,16 +247,16 @@ impl<S: HashedPostStateProvider> HashedPostStateProvider for CachedStateProvider
 
 /// Execution cache used during block processing.
 ///
-/// Optimizes state access by maintaining in-memory copies of frequently accessed
-/// accounts, storage slots, and bytecode. Works in conjunction with prewarming
-/// to reduce database I/O during block execution.
+/// Optimizes state access by maintaining in-memory copies of frequently
+/// accessed accounts, storage slots, and bytecode. Works in conjunction with
+/// prewarming to reduce database I/O during block execution.
 #[derive(Debug, Clone, Default)]
 pub struct ExecutionCache {
 	/// Cache for contract bytecode, keyed by code hash.
 	code_cache: DashMap<B256, Option<Bytecode>>,
 
-	/// Per-account storage cache: outer cache keyed by Address, inner cache tracks that account’s
-	/// storage slots.
+	/// Per-account storage cache: outer cache keyed by Address, inner cache
+	/// tracks that account’s storage slots.
 	storage_cache: DashMap<Address, Arc<AccountStorageCache>>,
 
 	/// Cache for basic account information (nonce, balance, code hash).
@@ -232,7 +270,7 @@ impl ExecutionCache {
 	/// - `NotCached`: The account's storage cache doesn't exist
 	/// - `Empty`: The slot exists in the account's cache but is empty
 	/// - `Value`: The slot exists and has a specific value
-	pub  fn get_storage(&self, address: &Address, key: &StorageKey) -> SlotStatus {
+	pub fn get_storage(&self, address: &Address, key: &StorageKey) -> SlotStatus {
 		match self.storage_cache.get(address) {
 			None => SlotStatus::NotCached,
 			Some(account_cache) => account_cache.get_storage(key),
@@ -240,7 +278,7 @@ impl ExecutionCache {
 	}
 
 	/// Insert storage value into hierarchical cache
-	pub  fn insert_storage(
+	pub fn insert_storage(
 		&self,
 		address: Address,
 		key: StorageKey,
@@ -249,15 +287,20 @@ impl ExecutionCache {
 		self.insert_storage_bulk(address, [(key, value)]);
 	}
 
-	/// Insert multiple storage values into hierarchical cache for a single account
+	/// Insert multiple storage values into hierarchical cache for a single
+	/// account
 	///
-	/// This method is optimized for inserting multiple storage values for the same address
-	/// by doing the account cache lookup only once instead of for each key-value pair.
-	pub  fn insert_storage_bulk<I>(&self, address: Address, storage_entries: I)
+	/// This method is optimized for inserting multiple storage values for the
+	/// same address by doing the account cache lookup only once instead of for
+	/// each key-value pair.
+	pub fn insert_storage_bulk<I>(&self, address: Address, storage_entries: I)
 	where
 		I: IntoIterator<Item = (StorageKey, Option<StorageValue>)>,
 	{
-		let account_cache = self.storage_cache.entry(address).or_insert_with(Default::default);
+		let account_cache = self
+			.storage_cache
+			.entry(address)
+			.or_insert_with(Default::default);
 
 		for (key, value) in storage_entries {
 			account_cache.slots.insert(key, value);
@@ -265,12 +308,12 @@ impl ExecutionCache {
 	}
 
 	/// Invalidate storage for specific account
-	pub  fn invalidate_account_storage(&self, address: &Address) {
+	pub fn invalidate_account_storage(&self, address: &Address) {
 		self.storage_cache.remove(address);
 	}
 
 	/// Returns the total number of storage slots cached across all accounts
-	pub  fn total_storage_slots(&self) -> usize {
+	pub fn total_storage_slots(&self) -> usize {
 		self.storage_cache.iter().map(|addr| addr.len()).sum()
 	}
 
@@ -285,56 +328,68 @@ impl ExecutionCache {
 	///
 	/// ## Why This Order Matters
 	///
-	/// Account information references bytecode via code hash. If we update accounts
-	/// before bytecode, we might create cache entries pointing to non-existent code.
-	/// The current order ensures cache consistency.
+	/// Account information references bytecode via code hash. If we update
+	/// accounts before bytecode, we might create cache entries pointing to
+	/// non-existent code. The current order ensures cache consistency.
 	///
 	/// ## Error Handling
 	///
-	/// Returns an error if the state updates are inconsistent and should be discarded.
-	pub  fn insert_state(&self, state_updates: &BundleState) -> Result<(), ()> {
+	/// Returns an error if the state updates are inconsistent and should be
+	/// discarded.
+	pub fn insert_state(&self, state_updates: &BundleState) -> Result<(), ()> {
 		// Insert bytecodes
 		for (code_hash, bytecode) in &state_updates.contracts {
-			self.code_cache.insert(*code_hash, Some(Bytecode(bytecode.clone())));
+			self
+				.code_cache
+				.insert(*code_hash, Some(Bytecode(bytecode.clone())));
 		}
 
 		for (addr, account) in &state_updates.state {
-			// If the account was not modified, as in not changed and not destroyed, then we have
-			// nothing to do w.r.t. this particular account and can move on
+			// If the account was not modified, as in not changed and not destroyed,
+			// then we have nothing to do w.r.t. this particular account and can
+			// move on
 			if account.status.is_not_modified() {
-				continue
+				continue;
 			}
 
-			// If the account was destroyed, invalidate from the account / storage caches
+			// If the account was destroyed, invalidate from the account / storage
+			// caches
 			if account.was_destroyed() {
 				// Invalidate the account cache entry if destroyed
 				self.account_cache.remove(addr);
 
 				self.invalidate_account_storage(addr);
-				continue
+				continue;
 			}
 
-			// If we have an account that was modified, but it has a `None` account info, some wild
-			// error has occurred because this state should be unrepresentable. An account with
-			// `None` current info, should be destroyed.
+			// If we have an account that was modified, but it has a `None` account
+			// info, some wild error has occurred because this state should be
+			// unrepresentable. An account with `None` current info, should be
+			// destroyed.
 			let Some(ref account_info) = account.info else {
-				tracing::trace!(?account, "Account with None account info found in state updates");
-				return Err(())
+				tracing::trace!(
+					?account,
+					"Account with None account info found in state updates"
+				);
+				return Err(());
 			};
 
-			// Now we iterate over all storage and make updates to the cached storage values
-			// Use bulk insertion to optimize cache lookups - only lookup the account cache once
-			// instead of for each storage key
-			let storage_entries = account.storage.iter().map(|(storage_key, slot)| {
-				// We convert the storage key from U256 to B256 because that is how it's represented
-				// in the cache
-				((*storage_key).into(), Some(slot.present_value))
-			});
+			// Now we iterate over all storage and make updates to the cached storage
+			// values Use bulk insertion to optimize cache lookups - only lookup
+			// the account cache once instead of for each storage key
+			let storage_entries =
+				account.storage.iter().map(|(storage_key, slot)| {
+					// We convert the storage key from U256 to B256 because that is how
+					// it's represented in the cache
+					((*storage_key).into(), Some(slot.present_value))
+				});
 			self.insert_storage_bulk(*addr, storage_entries);
 
-			// Insert will update if present, so we just use the new account info as the new value
-			// for the account cache
-			self.account_cache.insert(*addr, Some(Account::from(account_info)));
+			// Insert will update if present, so we just use the new account info as
+			// the new value for the account cache
+			self
+				.account_cache
+				.insert(*addr, Some(Account::from(account_info)));
 		}
 
 		Ok(())
@@ -344,7 +399,8 @@ impl ExecutionCache {
 /// Cache for an individual account's storage slots.
 ///
 /// This represents the second level of the hierarchical storage cache.
-/// Each account gets its own `AccountStorageCache` to store accessed storage slots.
+/// Each account gets its own `AccountStorageCache` to store accessed storage
+/// slots.
 #[derive(Debug, Clone)]
 pub struct AccountStorageCache {
 	/// Map of storage keys to their cached values.
@@ -372,7 +428,11 @@ impl AccountStorageCache {
 	}
 
 	/// Insert a storage value
-	pub(crate) fn insert_storage(&self, key: StorageKey, value: Option<StorageValue>) {
+	pub(crate) fn insert_storage(
+		&self,
+		key: StorageKey,
+		value: Option<StorageValue>,
+	) {
 		self.slots.insert(key, value);
 	}
 
@@ -390,11 +450,15 @@ impl Default for AccountStorageCache {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
-	use crate::alloy::primitives::{B256, U256};
-	use rand::Rng;
-	use crate::reth::providers::test_utils::{ExtendedAccount, MockEthProvider};
-	use std::mem::size_of;
+	use {
+		super::*,
+		crate::{
+			alloy::primitives::{B256, U256},
+			reth::providers::test_utils::{ExtendedAccount, MockEthProvider},
+		},
+		rand::Rng,
+		std::mem::size_of,
+	};
 
 	mod tracking_allocator {
 		use std::{
@@ -433,7 +497,9 @@ mod tests {
 				let ret = unsafe { self.inner.alloc(layout) };
 				if !ret.is_null() {
 					self.allocated.fetch_add(layout.size(), Ordering::SeqCst);
-					self.total_allocated.fetch_add(layout.size(), Ordering::SeqCst);
+					self
+						.total_allocated
+						.fetch_add(layout.size(), Ordering::SeqCst);
 				}
 				ret
 			}
@@ -462,7 +528,8 @@ mod tests {
 
 	#[test]
 	fn measure_storage_cache_overhead() {
-		let (base_overhead, cache) = measure_allocation(|| AccountStorageCache::new());
+		let (base_overhead, cache) =
+			measure_allocation(|| AccountStorageCache::new());
 		println!("Base AccountStorageCache overhead: {base_overhead} bytes");
 		let mut rng = rand::rng();
 
@@ -481,18 +548,26 @@ mod tests {
 				cache.insert_storage(key, Some(value));
 			}
 		});
-		println!("Average overhead over {} slots: {} bytes", TOTAL_SLOTS, test_slots / TOTAL_SLOTS);
+		println!(
+			"Average overhead over {} slots: {} bytes",
+			TOTAL_SLOTS,
+			test_slots / TOTAL_SLOTS
+		);
 
 		println!("\nTheoretical sizes:");
 		println!("StorageKey size: {} bytes", size_of::<StorageKey>());
 		println!("StorageValue size: {} bytes", size_of::<StorageValue>());
-		println!("Option<StorageValue> size: {} bytes", size_of::<Option<StorageValue>>());
+		println!(
+			"Option<StorageValue> size: {} bytes",
+			size_of::<Option<StorageValue>>()
+		);
 		println!("Option<B256> size: {} bytes", size_of::<Option<B256>>());
 	}
 
 	#[test]
 	fn test_empty_storage_cached_state_provider() {
-		// make sure when we have an empty value in storage, we return `Empty` and not `NotCached`
+		// make sure when we have an empty value in storage, we return `Empty` and
+		// not `NotCached`
 		let address = Address::random();
 		let storage_key = StorageKey::random();
 		let account = ExtendedAccount::new(0, U256::ZERO);
@@ -502,8 +577,7 @@ mod tests {
 		provider.extend_accounts(vec![(address, account)]);
 
 		let caches = ExecutionCache::default();
-		let state_provider =
-			CachedStateProvider::new_with_caches(provider, caches);
+		let state_provider = CachedStateProvider::new_with_caches(provider, caches);
 
 		// check that the storage is empty
 		let res = state_provider.storage(address, storage_key);
@@ -517,16 +591,15 @@ mod tests {
 		let address = Address::random();
 		let storage_key = StorageKey::random();
 		let storage_value = U256::from(1);
-		let account =
-			ExtendedAccount::new(0, U256::ZERO).extend_storage(vec![(storage_key, storage_value)]);
+		let account = ExtendedAccount::new(0, U256::ZERO)
+			.extend_storage(vec![(storage_key, storage_value)]);
 
 		// note that we extend storage here with one value
 		let provider = MockEthProvider::default();
 		provider.extend_accounts(vec![(address, account)]);
 
 		let caches = ExecutionCache::default();
-		let state_provider =
-			CachedStateProvider::new_with_caches(provider, caches);
+		let state_provider = CachedStateProvider::new_with_caches(provider, caches);
 
 		// check that the storage returns the expected value
 		let res = state_provider.storage(address, storage_key);
@@ -536,7 +609,8 @@ mod tests {
 
 	#[test]
 	fn test_get_storage_populated() {
-		// make sure when we have something cached, we get the cached value in the `SlotStatus`
+		// make sure when we have something cached, we get the cached value in the
+		// `SlotStatus`
 		let address = Address::random();
 		let storage_key = StorageKey::random();
 		let storage_value = U256::from(1);
@@ -552,7 +626,8 @@ mod tests {
 
 	#[test]
 	fn test_get_storage_not_cached() {
-		// make sure when we have nothing cached, we get the `NotCached` value in the `SlotStatus`
+		// make sure when we have nothing cached, we get the `NotCached` value in
+		// the `SlotStatus`
 		let storage_key = StorageKey::random();
 		let address = Address::random();
 
@@ -566,8 +641,8 @@ mod tests {
 
 	#[test]
 	fn test_get_storage_empty() {
-		// make sure when we insert an empty value to the cache, we get the `Empty` value in the
-		// `SlotStatus`
+		// make sure when we insert an empty value to the cache, we get the `Empty`
+		// value in the `SlotStatus`
 		let address = Address::random();
 		let storage_key = StorageKey::random();
 
