@@ -1,308 +1,582 @@
 //! Database adapters for payload building.
 // Originated from reth https://github.com/paradigmxyz/reth/blob/b72bb6790a5f7ada75282e52b80f986d9717e698/crates/revm/src/cached.rs
+
+use reth_ethereum::evm::revm::db::BundleState;
+use reth_ethereum::primitives::{Account, Bytecode};
+use reth_ethereum::trie::{AccountProof, HashedPostState, HashedStorage, MultiProof, MultiProofTargets, StorageMultiProof, StorageProof, TrieInput};
+use reth_ethereum::trie::updates::TrieUpdates;
 use {
 	crate::{
-		alloy::primitives::{Address, B256, U256, map::HashMap},
-		reth::revm::{
-			Database,
-			DatabaseRef,
-			bytecode::Bytecode,
-			state::AccountInfo,
-		},
+		alloy::primitives::{Address, B256},
+		reth::ethereum::provider::{AccountReader, BlockHashReader, BytecodeReader, HashedPostStateProvider, StateProofProvider, StateRootProvider, StorageRootProvider, StateProvider},
+		reth::errors::ProviderResult,
 	},
-	core::cell::RefCell,
-	dashmap::{DashMap, Entry, Map},
+	dashmap::DashMap,
 	std::sync::Arc,
 };
+use crate::alloy::primitives::{StorageKey, StorageValue};
 
-/// A container type that caches reads from an underlying [`DatabaseRef`].
-///
-/// This is intended to be used in conjunction with `revm::db::State`
-/// during payload building which repeatedly accesses the same data.
-///
-/// [`CachedReads::as_db_mut`] transforms this type into a [`Database`]
-/// implementation that uses [`CachedReads`] as a caching layer for operations,
-/// and records any cache misses.
-///
-/// # Example
-///
-/// ```
-/// use reth_revm::{cached::CachedReads, DatabaseRef, db::State};
-///
-/// fn build_payload<DB: DatabaseRef>(db: DB) {
-///     let mut cached_reads = CachedReads::default();
-///     let db = cached_reads.as_db_mut(db);
-///     // this is `Database` and can be used to build a payload, it never commits to `CachedReads` or the underlying database, but all reads from the underlying database are cached in `CachedReads`.
-///     // Subsequent payload build attempts can use cached reads and avoid hitting the underlying database.
-///     let state = State::builder().with_database(db).build();
-/// }
-/// ```
-#[derive(Debug, Clone, Default)]
-pub struct CachedReads {
-	/// Block state account with storage.
-	pub accounts: DashMap<Address, CachedAccount>,
-	/// Created contracts.
-	pub contracts: DashMap<B256, Bytecode>,
-	/// Block hash mapped to the block number.
-	pub block_hashes: DashMap<u64, B256>,
+/// A wrapper of a state provider and a shared cache.
+pub struct CachedStateProvider<S> {
+	/// The state provider
+	state_provider: S,
+
+	/// The caches used for the provider
+	caches: ExecutionCache,
 }
 
-// === impl CachedReads ===
-
-impl CachedReads {
-	/// Gets a [`DatabaseRef`] that will cache reads from the given database.
-	pub const fn as_db<DB>(&mut self, db: DB) -> CachedReadsDBRef<'_, DB> {
-		self.as_db_mut(db).into_db()
-	}
-
-	/// Gets a mutable [`Database`] that will cache reads from the underlying
-	/// database.
-	pub const fn as_db_mut<DB>(&mut self, db: DB) -> CachedReadsDbMut<'_, DB> {
-		CachedReadsDbMut { cached: self, db }
-	}
-
-	/// Inserts an account info into the cache.
-	pub fn insert_account(
-		&self,
-		address: Address,
-		info: AccountInfo,
-		storage: HashMap<U256, U256>,
-	) {
-		self.accounts.insert(address, CachedAccount {
-			info: Some(info),
-			storage,
-		});
-	}
-
-	/// Extends current cache with entries from another [`CachedReads`] instance.
-	///
-	/// Note: It is expected that both instances are based on the exact same
-	/// state.
-	pub fn extend(&self, other: Self) {
-		for (k, v) in other.accounts.into_iter() {
-			self.accounts.insert(k, v);
-		}
-		for (k, v) in other.contracts.into_iter() {
-			self.contracts.insert(k, v);
-		}
-		for (k, v) in other.block_hashes.into_iter() {
-			self.block_hashes.insert(k, v);
-		}
-	}
-}
-
-/// A [Database] that caches reads inside [`CachedReads`].
-#[derive(Debug)]
-pub struct CachedReadsDbMut<'a, DB> {
-	/// The cache of reads.
-	pub cached: &'a CachedReads,
-	/// The underlying database.
-	pub db: DB,
-}
-
-impl<'a, DB> CachedReadsDbMut<'a, DB> {
-	/// Converts this [`Database`] implementation into a [`DatabaseRef`] that will
-	/// still cache reads.
-	pub const fn into_db(self) -> CachedReadsDBRef<'a, DB> {
-		CachedReadsDBRef {
-			inner: RefCell::new(self),
-		}
-	}
-
-	/// Returns access to wrapped [`DatabaseRef`].
-	pub const fn inner(&self) -> &DB {
-		&self.db
-	}
-}
-
-impl<DB, T> AsRef<T> for CachedReadsDbMut<'_, DB>
+impl<S> CachedStateProvider<S>
 where
-	DB: AsRef<T>,
+	S: StateProvider,
 {
-	fn as_ref(&self) -> &T {
-		self.inner().as_ref()
+	/// Creates a new [`CachedStateProvider`] from an [`ExecutionCache`], state provider, and
+	/// [`CachedStateMetrics`].
+	pub const fn new_with_caches(
+		state_provider: S,
+		caches: ExecutionCache,
+	) -> Self {
+		Self { state_provider, caches }
 	}
 }
 
-impl<DB: DatabaseRef> Database for CachedReadsDbMut<'_, DB> {
-	type Error = <DB as DatabaseRef>::Error;
+impl<S: AccountReader> AccountReader for CachedStateProvider<S> {
+	fn basic_account(&self, address: &Address) -> ProviderResult<Option<Account>> {
+		if let Some(res) = self.caches.account_cache.get(address) {
+			return Ok(*res)
+		}
 
-	fn basic(
-		&mut self,
-		address: Address,
-	) -> Result<Option<AccountInfo>, Self::Error> {
-		let basic = match self.cached.accounts.entry(address) {
-			Entry::Occupied(entry) => entry.get().info.clone(),
-			Entry::Vacant(entry) => entry
-				.insert(CachedAccount::new(self.db.basic_ref(address)?))
-				.info
-				.clone(),
-		};
-		Ok(basic)
+		let res = self.state_provider.basic_account(address)?;
+		self.caches.account_cache.insert(*address, res);
+		Ok(res)
 	}
+}
 
-	fn code_by_hash(&mut self, code_hash: B256) -> Result<Bytecode, Self::Error> {
-		let code = match self.cached.contracts.entry(code_hash) {
-			Entry::Occupied(entry) => entry.get().clone(),
-			Entry::Vacant(entry) => {
-				entry.insert(self.db.code_by_hash_ref(code_hash)?).clone()
-			}
-		};
-		Ok(code)
-	}
+/// Represents the status of a storage slot in the cache.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SlotStatus {
+	/// The account's storage cache doesn't exist.
+	NotCached,
+	/// The storage slot exists in cache and is empty (value is zero).
+	Empty,
+	/// The storage slot exists in cache and has a specific non-zero value.
+	Value(StorageValue),
+}
 
+impl<S: StateProvider> StateProvider for CachedStateProvider<S> {
 	fn storage(
-		&mut self,
-		address: Address,
-		index: U256,
-	) -> Result<U256, Self::Error> {
-		match self.cached.accounts.entry(address) {
-			Entry::Occupied(mut acc_entry) => {
-				match acc_entry.get_mut().storage.entry(index) {
-					std::collections::hash_map::Entry::Occupied(entry) => {
-						Ok(*entry.get())
-					}
-					std::collections::hash_map::Entry::Vacant(entry) => {
-						Ok(*entry.insert(self.db.storage_ref(address, index)?))
-					}
-				}
+		&self,
+		account: Address,
+		storage_key: StorageKey,
+	) -> ProviderResult<Option<StorageValue>> {
+		match self.caches.get_storage(&account, &storage_key) {
+			SlotStatus::NotCached => {
+				let final_res = self.state_provider.storage(account, storage_key)?;
+				self.caches.insert_storage(account, storage_key, final_res);
+				Ok(final_res)
 			}
-			Entry::Vacant(acc_entry) => {
-				// acc needs to be loaded for us to access slots.
-				let info = self.db.basic_ref(address)?;
-				let (account, value) = if info.is_some() {
-					let value = self.db.storage_ref(address, index)?;
-					let mut account = CachedAccount::new(info);
-					account.storage.insert(index, value);
-					(account, value)
-				} else {
-					(CachedAccount::new(info), U256::ZERO)
-				};
-				acc_entry.insert(account);
-				Ok(value)
+			SlotStatus::Empty => {
+				Ok(None)
+			}
+			SlotStatus::Value(value) => {
+				Ok(Some(value))
 			}
 		}
 	}
+}
 
-	fn block_hash(&mut self, number: u64) -> Result<B256, Self::Error> {
-		let hash = match self.cached.block_hashes.entry(number) {
-			Entry::Occupied(entry) => *entry.get(),
-			Entry::Vacant(entry) => *entry.insert(self.db.block_hash_ref(number)?),
-		};
-		Ok(hash)
+impl<S: BytecodeReader> BytecodeReader for CachedStateProvider<S> {
+	fn bytecode_by_hash(&self, code_hash: &B256) -> ProviderResult<Option<Bytecode>> {
+		if let Some(res) = self.caches.code_cache.get(code_hash).as_deref() {
+			return Ok(res.clone())
+		}
+
+		let final_res = self.state_provider.bytecode_by_hash(code_hash)?;
+		self.caches.code_cache.insert(*code_hash, final_res.clone());
+		Ok(final_res)
 	}
 }
 
-/// A [`DatabaseRef`] that caches reads inside [`CachedReads`].
+impl<S: StateRootProvider> StateRootProvider for CachedStateProvider<S> {
+	fn state_root(&self, hashed_state: HashedPostState) -> ProviderResult<B256> {
+		self.state_provider.state_root(hashed_state)
+	}
+
+	fn state_root_from_nodes(&self, input: TrieInput) -> ProviderResult<B256> {
+		self.state_provider.state_root_from_nodes(input)
+	}
+
+	fn state_root_with_updates(
+		&self,
+		hashed_state: HashedPostState,
+	) -> ProviderResult<(B256, TrieUpdates)> {
+		self.state_provider.state_root_with_updates(hashed_state)
+	}
+
+	fn state_root_from_nodes_with_updates(
+		&self,
+		input: TrieInput,
+	) -> ProviderResult<(B256, TrieUpdates)> {
+		self.state_provider.state_root_from_nodes_with_updates(input)
+	}
+}
+
+impl<S: StateProofProvider> StateProofProvider for CachedStateProvider<S> {
+	fn proof(
+		&self,
+		input: TrieInput,
+		address: Address,
+		slots: &[B256],
+	) -> ProviderResult<AccountProof> {
+		self.state_provider.proof(input, address, slots)
+	}
+
+	fn multiproof(
+		&self,
+		input: TrieInput,
+		targets: MultiProofTargets,
+	) -> ProviderResult<MultiProof> {
+		self.state_provider.multiproof(input, targets)
+	}
+
+	fn witness(
+		&self,
+		input: TrieInput,
+		target: HashedPostState,
+	) -> ProviderResult<Vec<crate::alloy::primitives::Bytes>> {
+		self.state_provider.witness(input, target)
+	}
+}
+
+impl<S: StorageRootProvider> StorageRootProvider for CachedStateProvider<S> {
+	fn storage_root(
+		&self,
+		address: Address,
+		hashed_storage: HashedStorage,
+	) -> ProviderResult<B256> {
+		self.state_provider.storage_root(address, hashed_storage)
+	}
+
+	fn storage_proof(
+		&self,
+		address: Address,
+		slot: B256,
+		hashed_storage: HashedStorage,
+	) -> ProviderResult<StorageProof> {
+		self.state_provider.storage_proof(address, slot, hashed_storage)
+	}
+
+	/// Generate a storage multiproof for multiple storage slots.
+	///
+	/// A **storage multiproof** is a cryptographic proof that can verify the values
+	/// of multiple storage slots for a single account in a single verification step.
+	/// Instead of generating separate proofs for each slot (which would be inefficient),
+	/// a multiproof bundles the necessary trie nodes to prove all requested slots.
+	///
+	/// ## How it works:
+	/// 1. Takes an account address and a list of storage slot keys
+	/// 2. Traverses the account's storage trie to collect proof nodes
+	/// 3. Returns a [`StorageMultiProof`] containing the minimal set of trie nodes needed to verify
+	///    all the requested storage slots
+	fn storage_multiproof(
+		&self,
+		address: Address,
+		slots: &[B256],
+		hashed_storage: HashedStorage,
+	) -> ProviderResult<StorageMultiProof> {
+		self.state_provider.storage_multiproof(address, slots, hashed_storage)
+	}
+}
+
+impl<S: BlockHashReader> BlockHashReader for CachedStateProvider<S> {
+	fn block_hash(&self, number: crate::alloy::primitives::BlockNumber) -> ProviderResult<Option<B256>> {
+		self.state_provider.block_hash(number)
+	}
+
+	fn canonical_hashes_range(
+		&self,
+		start: crate::alloy::primitives::BlockNumber,
+		end: crate::alloy::primitives::BlockNumber,
+	) -> ProviderResult<Vec<B256>> {
+		self.state_provider.canonical_hashes_range(start, end)
+	}
+}
+
+impl<S: HashedPostStateProvider> HashedPostStateProvider for CachedStateProvider<S> {
+	fn hashed_post_state(&self, bundle_state: &BundleState) -> HashedPostState {
+		self.state_provider.hashed_post_state(bundle_state)
+	}
+}
+
+/// Execution cache used during block processing.
 ///
-/// This is intended to be used as the [`DatabaseRef`] for
-/// `revm::db::State` for repeated payload build jobs.
-#[derive(Debug)]
-pub struct CachedReadsDBRef<'a, DB> {
-	/// The inner cache reads db mut.
-	pub inner: RefCell<CachedReadsDbMut<'a, DB>>,
+/// Optimizes state access by maintaining in-memory copies of frequently accessed
+/// accounts, storage slots, and bytecode. Works in conjunction with prewarming
+/// to reduce database I/O during block execution.
+#[derive(Debug, Clone, Default)]
+pub struct ExecutionCache {
+	/// Cache for contract bytecode, keyed by code hash.
+	code_cache: DashMap<B256, Option<Bytecode>>,
+
+	/// Per-account storage cache: outer cache keyed by Address, inner cache tracks that account’s
+	/// storage slots.
+	storage_cache: DashMap<Address, Arc<AccountStorageCache>>,
+
+	/// Cache for basic account information (nonce, balance, code hash).
+	account_cache: DashMap<Address, Option<Account>>,
 }
 
-impl<DB: DatabaseRef> DatabaseRef for CachedReadsDBRef<'_, DB> {
-	type Error = <DB as DatabaseRef>::Error;
-
-	fn basic_ref(
-		&self,
-		address: Address,
-	) -> Result<Option<AccountInfo>, Self::Error> {
-		self.inner.borrow_mut().basic(address)
-	}
-
-	fn code_by_hash_ref(&self, code_hash: B256) -> Result<Bytecode, Self::Error> {
-		self.inner.borrow_mut().code_by_hash(code_hash)
-	}
-
-	fn storage_ref(
-		&self,
-		address: Address,
-		index: U256,
-	) -> Result<U256, Self::Error> {
-		self.inner.borrow_mut().storage(address, index)
-	}
-
-	fn block_hash_ref(&self, number: u64) -> Result<B256, Self::Error> {
-		self.inner.borrow_mut().block_hash(number)
-	}
-}
-
-/// Cached account contains the account state with storage
-/// but lacks the account status.
-#[derive(Debug, Clone)]
-pub struct CachedAccount {
-	/// Account state.
-	pub info: Option<AccountInfo>,
-	/// Account's storage.
-	pub storage: HashMap<U256, U256>,
-}
-
-impl CachedAccount {
-	fn new(info: Option<AccountInfo>) -> Self {
-		Self {
-			info,
-			storage: HashMap::default(),
+impl ExecutionCache {
+	/// Get storage value from hierarchical cache.
+	///
+	/// Returns a `SlotStatus` indicating whether:
+	/// - `NotCached`: The account's storage cache doesn't exist
+	/// - `Empty`: The slot exists in the account's cache but is empty
+	/// - `Value`: The slot exists and has a specific value
+	pub  fn get_storage(&self, address: &Address, key: &StorageKey) -> SlotStatus {
+		match self.storage_cache.get(address) {
+			None => SlotStatus::NotCached,
+			Some(account_cache) => account_cache.get_storage(key),
 		}
+	}
+
+	/// Insert storage value into hierarchical cache
+	pub  fn insert_storage(
+		&self,
+		address: Address,
+		key: StorageKey,
+		value: Option<StorageValue>,
+	) {
+		self.insert_storage_bulk(address, [(key, value)]);
+	}
+
+	/// Insert multiple storage values into hierarchical cache for a single account
+	///
+	/// This method is optimized for inserting multiple storage values for the same address
+	/// by doing the account cache lookup only once instead of for each key-value pair.
+	pub  fn insert_storage_bulk<I>(&self, address: Address, storage_entries: I)
+	where
+		I: IntoIterator<Item = (StorageKey, Option<StorageValue>)>,
+	{
+		let account_cache = self.storage_cache.entry(address).or_insert_with(Default::default);
+
+		for (key, value) in storage_entries {
+			account_cache.slots.insert(key, value);
+		}
+	}
+
+	/// Invalidate storage for specific account
+	pub  fn invalidate_account_storage(&self, address: &Address) {
+		self.storage_cache.remove(address);
+	}
+
+	/// Returns the total number of storage slots cached across all accounts
+	pub  fn total_storage_slots(&self) -> usize {
+		self.storage_cache.iter().map(|addr| addr.len()).sum()
+	}
+
+	/// Inserts the post-execution state changes into the cache.
+	///
+	/// This method is called after transaction execution to update the cache with
+	/// the touched and modified state. The insertion order is critical:
+	///
+	/// 1. Bytecodes: Insert contract code first
+	/// 2. Storage slots: Update storage values for each account
+	/// 3. Accounts: Update account info (nonce, balance, code hash)
+	///
+	/// ## Why This Order Matters
+	///
+	/// Account information references bytecode via code hash. If we update accounts
+	/// before bytecode, we might create cache entries pointing to non-existent code.
+	/// The current order ensures cache consistency.
+	///
+	/// ## Error Handling
+	///
+	/// Returns an error if the state updates are inconsistent and should be discarded.
+	pub  fn insert_state(&self, state_updates: &BundleState) -> Result<(), ()> {
+		// Insert bytecodes
+		for (code_hash, bytecode) in &state_updates.contracts {
+			self.code_cache.insert(*code_hash, Some(Bytecode(bytecode.clone())));
+		}
+
+		for (addr, account) in &state_updates.state {
+			// If the account was not modified, as in not changed and not destroyed, then we have
+			// nothing to do w.r.t. this particular account and can move on
+			if account.status.is_not_modified() {
+				continue
+			}
+
+			// If the account was destroyed, invalidate from the account / storage caches
+			if account.was_destroyed() {
+				// Invalidate the account cache entry if destroyed
+				self.account_cache.remove(addr);
+
+				self.invalidate_account_storage(addr);
+				continue
+			}
+
+			// If we have an account that was modified, but it has a `None` account info, some wild
+			// error has occurred because this state should be unrepresentable. An account with
+			// `None` current info, should be destroyed.
+			let Some(ref account_info) = account.info else {
+				tracing::trace!(?account, "Account with None account info found in state updates");
+				return Err(())
+			};
+
+			// Now we iterate over all storage and make updates to the cached storage values
+			// Use bulk insertion to optimize cache lookups - only lookup the account cache once
+			// instead of for each storage key
+			let storage_entries = account.storage.iter().map(|(storage_key, slot)| {
+				// We convert the storage key from U256 to B256 because that is how it's represented
+				// in the cache
+				((*storage_key).into(), Some(slot.present_value))
+			});
+			self.insert_storage_bulk(*addr, storage_entries);
+
+			// Insert will update if present, so we just use the new account info as the new value
+			// for the account cache
+			self.account_cache.insert(*addr, Some(Account::from(account_info)));
+		}
+
+		Ok(())
+	}
+}
+
+/// Cache for an individual account's storage slots.
+///
+/// This represents the second level of the hierarchical storage cache.
+/// Each account gets its own `AccountStorageCache` to store accessed storage slots.
+#[derive(Debug, Clone)]
+pub struct AccountStorageCache {
+	/// Map of storage keys to their cached values.
+	slots: DashMap<StorageKey, Option<StorageValue>>,
+}
+
+impl AccountStorageCache {
+	/// Create a new [`AccountStorageCache`]
+	pub(crate) fn new() -> Self {
+		Self {
+			slots: DashMap::new(),
+		}
+	}
+
+	/// Get a storage value from this account's cache.
+	/// - `NotCached`: The slot is not in the cache
+	/// - `Empty`: The slot is empty
+	/// - `Value`: The slot has a specific value
+	pub(crate) fn get_storage(&self, key: &StorageKey) -> SlotStatus {
+		match self.slots.get(key).as_deref() {
+			None => SlotStatus::NotCached,
+			Some(None) => SlotStatus::Empty,
+			Some(Some(value)) => SlotStatus::Value(*value),
+		}
+	}
+
+	/// Insert a storage value
+	pub(crate) fn insert_storage(&self, key: StorageKey, value: Option<StorageValue>) {
+		self.slots.insert(key, value);
+	}
+
+	/// Returns the number of slots in the cache
+	pub(crate) fn len(&self) -> usize {
+		self.slots.len()
+	}
+}
+
+impl Default for AccountStorageCache {
+	fn default() -> Self {
+		Self::new()
 	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::alloy::primitives::{B256, U256};
+	use rand::Rng;
+	use crate::reth::providers::test_utils::{ExtendedAccount, MockEthProvider};
+	use std::mem::size_of;
+
+	mod tracking_allocator {
+		use std::{
+			alloc::{GlobalAlloc, Layout, System},
+			sync::atomic::{AtomicUsize, Ordering},
+		};
+
+		#[derive(Debug)]
+		pub(crate) struct TrackingAllocator {
+			allocated: AtomicUsize,
+			total_allocated: AtomicUsize,
+			inner: System,
+		}
+
+		impl TrackingAllocator {
+			pub(crate) const fn new() -> Self {
+				Self {
+					allocated: AtomicUsize::new(0),
+					total_allocated: AtomicUsize::new(0),
+					inner: System,
+				}
+			}
+
+			pub(crate) fn reset(&self) {
+				self.allocated.store(0, Ordering::SeqCst);
+				self.total_allocated.store(0, Ordering::SeqCst);
+			}
+
+			pub(crate) fn total_allocated(&self) -> usize {
+				self.total_allocated.load(Ordering::SeqCst)
+			}
+		}
+
+		unsafe impl GlobalAlloc for TrackingAllocator {
+			unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+				let ret = unsafe { self.inner.alloc(layout) };
+				if !ret.is_null() {
+					self.allocated.fetch_add(layout.size(), Ordering::SeqCst);
+					self.total_allocated.fetch_add(layout.size(), Ordering::SeqCst);
+				}
+				ret
+			}
+
+			unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+				self.allocated.fetch_sub(layout.size(), Ordering::SeqCst);
+				unsafe { self.inner.dealloc(ptr, layout) }
+			}
+		}
+	}
+
+	use tracking_allocator::TrackingAllocator;
+
+	#[global_allocator]
+	static ALLOCATOR: TrackingAllocator = TrackingAllocator::new();
+
+	fn measure_allocation<T, F>(f: F) -> (usize, T)
+	where
+		F: FnOnce() -> T,
+	{
+		ALLOCATOR.reset();
+		let result = f();
+		let total = ALLOCATOR.total_allocated();
+		(total, result)
+	}
 
 	#[test]
-	fn test_extend_with_two_cached_reads() {
-		// Setup test data
-		let hash1 = B256::from_slice(&[1u8; 32]);
-		let hash2 = B256::from_slice(&[2u8; 32]);
-		let address1 = Address::from_slice(&[1u8; 20]);
-		let address2 = Address::from_slice(&[2u8; 20]);
+	fn measure_storage_cache_overhead() {
+		let (base_overhead, cache) = measure_allocation(|| AccountStorageCache::new());
+		println!("Base AccountStorageCache overhead: {base_overhead} bytes");
+		let mut rng = rand::rng();
 
-		// Create primary cache
-		let primary = {
-			let cache = CachedReads::default();
-			cache
-				.accounts
-				.insert(address1, CachedAccount::new(Some(AccountInfo::default())));
-			cache.contracts.insert(hash1, Bytecode::default());
-			cache.block_hashes.insert(1, hash1);
-			cache
-		};
+		let key = StorageKey::random();
+		let value = StorageValue::from(rng.random::<u128>());
+		let (first_slot, _) = measure_allocation(|| {
+			cache.insert_storage(key, Some(value));
+		});
+		println!("First slot insertion overhead: {first_slot} bytes");
 
-		// Create additional cache
-		let additional = {
-			let cache = CachedReads::default();
-			cache
-				.accounts
-				.insert(address2, CachedAccount::new(Some(AccountInfo::default())));
-			cache.contracts.insert(hash2, Bytecode::default());
-			cache.block_hashes.insert(2, hash2);
-			cache
-		};
+		const TOTAL_SLOTS: usize = 10_000;
+		let (test_slots, _) = measure_allocation(|| {
+			for _ in 0..TOTAL_SLOTS {
+				let key = StorageKey::random();
+				let value = StorageValue::from(rng.random::<u128>());
+				cache.insert_storage(key, Some(value));
+			}
+		});
+		println!("Average overhead over {} slots: {} bytes", TOTAL_SLOTS, test_slots / TOTAL_SLOTS);
 
-		// Extending primary with additional cache
-		primary.extend(additional);
+		println!("\nTheoretical sizes:");
+		println!("StorageKey size: {} bytes", size_of::<StorageKey>());
+		println!("StorageValue size: {} bytes", size_of::<StorageValue>());
+		println!("Option<StorageValue> size: {} bytes", size_of::<Option<StorageValue>>());
+		println!("Option<B256> size: {} bytes", size_of::<Option<B256>>());
+	}
 
-		// Verify the combined state
-		assert!(
-			primary.accounts.len() == 2
-				&& primary.contracts.len() == 2
-				&& primary.block_hashes.len() == 2,
-			"All maps should contain 2 entries"
-		);
+	#[test]
+	fn test_empty_storage_cached_state_provider() {
+		// make sure when we have an empty value in storage, we return `Empty` and not `NotCached`
+		let address = Address::random();
+		let storage_key = StorageKey::random();
+		let account = ExtendedAccount::new(0, U256::ZERO);
 
-		// Verify specific entries
-		assert!(
-			primary.accounts.contains_key(&address1)
-				&& primary.accounts.contains_key(&address2)
-				&& primary.contracts.contains_key(&hash1)
-				&& primary.contracts.contains_key(&hash2)
-				&& primary.block_hashes.get(&1).as_deref() == Some(&hash1)
-				&& primary.block_hashes.get(&2).as_deref() == Some(&hash2),
-			"All expected entries should be present"
-		);
+		// note there is no storage here
+		let provider = MockEthProvider::default();
+		provider.extend_accounts(vec![(address, account)]);
+
+		let caches = ExecutionCache::default();
+		let state_provider =
+			CachedStateProvider::new_with_caches(provider, caches);
+
+		// check that the storage is empty
+		let res = state_provider.storage(address, storage_key);
+		assert!(res.is_ok());
+		assert_eq!(res.unwrap(), None);
+	}
+
+	#[test]
+	fn test_uncached_storage_cached_state_provider() {
+		// make sure when we have something uncached, we get the cached value
+		let address = Address::random();
+		let storage_key = StorageKey::random();
+		let storage_value = U256::from(1);
+		let account =
+			ExtendedAccount::new(0, U256::ZERO).extend_storage(vec![(storage_key, storage_value)]);
+
+		// note that we extend storage here with one value
+		let provider = MockEthProvider::default();
+		provider.extend_accounts(vec![(address, account)]);
+
+		let caches = ExecutionCache::default();
+		let state_provider =
+			CachedStateProvider::new_with_caches(provider, caches);
+
+		// check that the storage returns the expected value
+		let res = state_provider.storage(address, storage_key);
+		assert!(res.is_ok());
+		assert_eq!(res.unwrap(), Some(storage_value));
+	}
+
+	#[test]
+	fn test_get_storage_populated() {
+		// make sure when we have something cached, we get the cached value in the `SlotStatus`
+		let address = Address::random();
+		let storage_key = StorageKey::random();
+		let storage_value = U256::from(1);
+
+		// insert into caches directly
+		let caches = ExecutionCache::default();
+		caches.insert_storage(address, storage_key, Some(storage_value));
+
+		// check that the storage returns the cached value
+		let slot_status = caches.get_storage(&address, &storage_key);
+		assert_eq!(slot_status, SlotStatus::Value(storage_value));
+	}
+
+	#[test]
+	fn test_get_storage_not_cached() {
+		// make sure when we have nothing cached, we get the `NotCached` value in the `SlotStatus`
+		let storage_key = StorageKey::random();
+		let address = Address::random();
+
+		// just create empty caches
+		let caches = ExecutionCache::default();
+
+		// check that the storage is not cached
+		let slot_status = caches.get_storage(&address, &storage_key);
+		assert_eq!(slot_status, SlotStatus::NotCached);
+	}
+
+	#[test]
+	fn test_get_storage_empty() {
+		// make sure when we insert an empty value to the cache, we get the `Empty` value in the
+		// `SlotStatus`
+		let address = Address::random();
+		let storage_key = StorageKey::random();
+
+		// insert into caches directly
+		let caches = ExecutionCache::default();
+		caches.insert_storage(address, storage_key, None);
+
+		// check that the storage is empty
+		let slot_status = caches.get_storage(&address, &storage_key);
+		assert_eq!(slot_status, SlotStatus::Empty);
 	}
 }

@@ -10,7 +10,7 @@ mod cached_state;
 mod checkpoint;
 mod span;
 
-pub use {block::BlockExt, checkpoint::CheckpointExt, span::SpanExt};
+pub use {block::BlockExt, checkpoint::CheckpointExt, span::SpanExt, cached_state::{CachedStateProvider, ExecutionCache}};
 
 mod sealed {
 	/// This pattern is used to prevent external implementations of the extension
