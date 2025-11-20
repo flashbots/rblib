@@ -347,8 +347,8 @@ impl<P: Platform> Executable<P> {
 	/// |   false |       false       |   true   | discard |
 	/// |   false |       false       |   false  | error   |
 	///
-	/// Post-execution validation is skipped for simulation, as no state changes
-	/// are persisted.
+	/// Post-execution validation is performed on the simulated state, but the
+	/// state is not persisted.
 	fn simulate_bundle<DB>(
 		bundle: types::Bundle<P>,
 		block: &BlockContext<P>,
@@ -409,6 +409,14 @@ impl<P: Platform> Executable<P> {
 		let bundle = discarded
 			.into_iter()
 			.fold(bundle, |b, tx| b.without_transaction(tx));
+
+		// Extract the simulated state for validation (but do not merge transitions)
+		let simulated_state = state.take_bundle();
+
+		// Run post-execution validation on the simulated state
+		bundle
+			.validate_post_execution(&simulated_state, block)
+			.map_err(ExecutionError::InvalidBundlePostExecutionState)?;
 
 		// Return ExecutionResult with simulated results and default state (no
 		// persistence)
