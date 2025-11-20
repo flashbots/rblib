@@ -422,7 +422,6 @@ impl AccountStorageCache {
 	}
 
 	/// Insert a storage value
-	#[expect(dead_code)]
 	pub(crate) fn insert_storage(
 		&self,
 		key: StorageKey,
