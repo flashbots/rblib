@@ -68,19 +68,19 @@ impl<S: AccountReader> AccountReader for CachedStateProvider<S> {
 		&self,
 		address: &Address,
 	) -> ProviderResult<Option<Account>> {
-		if let Some(res) = self.caches.account_cache.get(address) {
+		if let Some(res) = self.caches.account.get(address) {
 			return Ok(*res);
 		}
 
 		let res = self.state_provider.basic_account(address)?;
-		self.caches.account_cache.insert(*address, res);
+		self.caches.account.insert(*address, res);
 		Ok(res)
 	}
 }
 
 /// Represents the status of a storage slot in the cache.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum SlotStatus {
+pub enum SlotStatus {
 	/// The account's storage cache doesn't exist.
 	NotCached,
 	/// The storage slot exists in cache and is empty (value is zero).
@@ -112,12 +112,12 @@ impl<S: BytecodeReader> BytecodeReader for CachedStateProvider<S> {
 		&self,
 		code_hash: &B256,
 	) -> ProviderResult<Option<Bytecode>> {
-		if let Some(res) = self.caches.code_cache.get(code_hash).as_deref() {
+		if let Some(res) = self.caches.code.get(code_hash).as_deref() {
 			return Ok(res.clone());
 		}
 
 		let final_res = self.state_provider.bytecode_by_hash(code_hash)?;
-		self.caches.code_cache.insert(*code_hash, final_res.clone());
+		self.caches.code.insert(*code_hash, final_res.clone());
 		Ok(final_res)
 	}
 }
@@ -253,14 +253,14 @@ impl<S: HashedPostStateProvider> HashedPostStateProvider
 #[derive(Debug, Clone, Default)]
 pub struct ExecutionCache {
 	/// Cache for contract bytecode, keyed by code hash.
-	code_cache: DashMap<B256, Option<Bytecode>>,
+	code: DashMap<B256, Option<Bytecode>>,
 
 	/// Per-account storage cache: outer cache keyed by Address, inner cache
 	/// tracks that account’s storage slots.
-	storage_cache: DashMap<Address, Arc<AccountStorageCache>>,
+	storage: DashMap<Address, Arc<AccountStorageCache>>,
 
 	/// Cache for basic account information (nonce, balance, code hash).
-	account_cache: DashMap<Address, Option<Account>>,
+	account: DashMap<Address, Option<Account>>,
 }
 
 impl ExecutionCache {
@@ -271,7 +271,7 @@ impl ExecutionCache {
 	/// - `Empty`: The slot exists in the account's cache but is empty
 	/// - `Value`: The slot exists and has a specific value
 	pub fn get_storage(&self, address: &Address, key: &StorageKey) -> SlotStatus {
-		match self.storage_cache.get(address) {
+		match self.storage.get(address) {
 			None => SlotStatus::NotCached,
 			Some(account_cache) => account_cache.get_storage(key),
 		}
@@ -298,7 +298,7 @@ impl ExecutionCache {
 		I: IntoIterator<Item = (StorageKey, Option<StorageValue>)>,
 	{
 		let account_cache = self
-			.storage_cache
+			.storage
 			.entry(address)
 			.or_insert_with(Default::default);
 
@@ -307,14 +307,9 @@ impl ExecutionCache {
 		}
 	}
 
-	/// Invalidate storage for specific account
-	pub fn invalidate_account_storage(&self, address: &Address) {
-		self.storage_cache.remove(address);
-	}
-
 	/// Returns the total number of storage slots cached across all accounts
 	pub fn total_storage_slots(&self) -> usize {
-		self.storage_cache.iter().map(|addr| addr.len()).sum()
+		self.storage.iter().map(|addr| addr.len()).sum()
 	}
 
 	/// Inserts the post-execution state changes into the cache.
@@ -340,7 +335,7 @@ impl ExecutionCache {
 		// Insert bytecodes
 		for (code_hash, bytecode) in &state_updates.contracts {
 			self
-				.code_cache
+				.code
 				.insert(*code_hash, Some(Bytecode(bytecode.clone())));
 		}
 
@@ -356,9 +351,8 @@ impl ExecutionCache {
 			// caches
 			if account.was_destroyed() {
 				// Invalidate the account cache entry if destroyed
-				self.account_cache.remove(addr);
-
-				self.invalidate_account_storage(addr);
+				self.account.remove(addr);
+				self.storage.remove(addr);
 				continue;
 			}
 
@@ -388,7 +382,7 @@ impl ExecutionCache {
 			// Insert will update if present, so we just use the new account info as
 			// the new value for the account cache
 			self
-				.account_cache
+				.account
 				.insert(*addr, Some(Account::from(account_info)));
 		}
 
@@ -428,6 +422,7 @@ impl AccountStorageCache {
 	}
 
 	/// Insert a storage value
+	#[expect(dead_code)]
 	pub(crate) fn insert_storage(
 		&self,
 		key: StorageKey,
