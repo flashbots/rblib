@@ -4,6 +4,7 @@
 use {
 	super::{job::PayloadJob, metrics},
 	crate::{
+		alloy::primitives::B256,
 		prelude::*,
 		reth::{
 			api::PayloadBuilderAttributes,
@@ -12,10 +13,12 @@ use {
 				NodeConfig,
 				components::PayloadServiceBuilder,
 			},
+			node::builder::NodePrimitives,
 			payload::builder::{PayloadBuilderHandle, PayloadBuilderService, *},
 			providers::{CanonStateSubscriptions, StateProviderFactory},
 		},
 	},
+	reth_ethereum::provider::CanonStateNotification,
 	std::sync::Arc,
 	tracing::debug,
 };
@@ -146,6 +149,7 @@ where
 {
 	pipeline: Arc<Pipeline<Plat>>,
 	service: Arc<ServiceContext<Plat, Provider>>,
+	pre_cached: Option<PrecachedState>,
 }
 
 impl<Plat, Provider> JobGenerator<Plat, Provider>
@@ -160,7 +164,24 @@ where
 		let pipeline = Arc::new(pipeline);
 		let service = Arc::new(service);
 
-		Self { pipeline, service }
+		Self {
+			pipeline,
+			service,
+			pre_cached: None,
+		}
+	}
+
+	/// Returns the pre-cached reads for the given parent header if it matches the
+	/// cached state's block.
+	fn maybe_pre_cached(&self, parent: B256) -> Option<ExecutionCache> {
+		// TODO: probably possible to remove .clone() here, even tho it shouldn't be
+		// too heavy
+		if let Some(cached) = self.pre_cached.clone()
+			&& cached.block == parent
+		{
+			return Some(cached.cached);
+		}
+		None
 	}
 }
 
@@ -183,8 +204,8 @@ where
 				PayloadBuilderError::MissingParentHeader(attribs.parent())
 			})?;
 
-		let base_state =
-			self.service.provider().state_by_block_hash(header.hash())?;
+		let hash = header.hash();
+		let base_state = self.service.provider().state_by_block_hash(hash)?;
 
 		// This is the beginning of the state manipulation API usage from within
 		// the pipelines API.
@@ -193,9 +214,41 @@ where
 			attribs,
 			base_state,
 			self.service.chain_spec().clone(),
+			self.maybe_pre_cached(hash),
 		)
 		.map_err(PayloadBuilderError::other)?;
 
 		Ok(PayloadJob::new(&self.pipeline, block_ctx, &self.service))
 	}
+
+	fn on_new_state<N: NodePrimitives>(
+		&mut self,
+		new_state: CanonStateNotification<N>,
+	) {
+		let cached = ExecutionCache::default();
+		if let Err(()) =
+			cached.insert_state(&new_state.committed().execution_outcome().bundle)
+		{
+			tracing::error!(
+				"Failed to insert committed state bundle for block {}",
+				new_state.tip().hash()
+			);
+			return;
+		}
+		self.pre_cached = Some(PrecachedState {
+			block: new_state.tip().hash(),
+			cached,
+		});
+	}
+}
+
+/// Pre-filled [`ExecutionCache`] for a specific block.
+///
+/// This is extracted from the [`CanonStateNotification`] for the tip block.
+#[derive(Debug, Clone)]
+pub(super) struct PrecachedState {
+	/// The block for which the state is pre-cached.
+	pub block: B256,
+	/// Cached state for the block.
+	pub cached: ExecutionCache,
 }

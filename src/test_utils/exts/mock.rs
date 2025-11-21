@@ -127,6 +127,7 @@ where
 			payload_attribs,
 			base_state,
 			chainspec.clone(),
+			None,
 		)
 		.expect("Failed to create mocked block context")
 	}
@@ -164,6 +165,7 @@ where
 			payload_attributes,
 			base_state,
 			chainspec.clone(),
+			None,
 		)
 		.expect("Failed to create mocked block context")
 	}

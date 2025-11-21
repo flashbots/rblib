@@ -69,6 +69,7 @@ impl<P: Platform> BlockContext<P> {
 		attribs: types::PayloadBuilderAttributes<P>,
 		base_state: StateProviderBox,
 		chainspec: Arc<types::ChainSpec<P>>,
+		cached: Option<ExecutionCache>,
 	) -> Result<Self, Error<P>> {
 		let block_env = P::next_block_environment_context::<P>(
 			&chainspec,
@@ -81,8 +82,7 @@ impl<P: Platform> BlockContext<P> {
 			.next_evm_env(&parent, &block_env)
 			.map_err(Error::EvmEnv)?;
 
-		// TODO: Prefill execution_cached with bundle state from the previous block
-		let execution_cached = ExecutionCache::default();
+		let execution_cached = cached.unwrap_or_default();
 		let provider =
 			CachedStateProvider::new_with_caches(base_state, execution_cached);
 		let mut base_state = State::builder()
