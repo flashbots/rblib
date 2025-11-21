@@ -7,15 +7,7 @@ use {
 	reth::{
 		errors::ProviderError,
 		ethereum::primitives::SignedTransaction,
-		evm::{
-			ConfigureEvm,
-			Evm,
-			revm::{
-				DatabaseCommit,
-				DatabaseRef,
-				context::result::ExecResultAndState,
-			},
-		},
+		evm::{ConfigureEvm, Evm, revm::DatabaseRef},
 		primitives::Recovered,
 		revm::{
 			State,
@@ -194,49 +186,12 @@ impl<P: Platform> Executable<P> {
 			return Err(ExecutionError::IneligibleBundle(eligible));
 		}
 
-		let evm_env = block.evm_env();
-		let evm_config = block.evm_config();
 		let mut db = State::builder()
 			.with_database(WrapDatabaseRef(db))
 			.with_bundle_update()
 			.build();
 
-		let mut discarded = Vec::new();
-		let mut results = Vec::with_capacity(bundle.transactions().len());
-
-		for transaction in bundle.transactions_encoded() {
-			let tx_hash = *transaction.tx_hash();
-			let optional = bundle.is_optional(&tx_hash);
-			let allowed_to_fail = bundle.is_allowed_to_fail(&tx_hash);
-
-			let result = evm_config
-				.evm_with_env(&mut db, evm_env.clone())
-				.transact(&transaction);
-
-			match result {
-				// Valid transaction or allowed to fail: include it in the bundle
-				Ok(ExecResultAndState { result, state })
-					if result.is_success() || allowed_to_fail =>
-				{
-					results.push(result);
-					db.commit(state);
-				}
-				// Optional failing transaction, not allowed to fail
-				// or optional invalid transaction: discard it
-				Ok(_) | Err(_) if optional => {
-					discarded.push(tx_hash);
-				}
-				// Non-Optional failing transaction, not allowed to fail: invalidate the
-				// bundle
-				Ok(_) => {
-					return Err(ExecutionError::BundleTransactionReverted(tx_hash));
-				}
-				// Non-Optional invalid transaction: invalidate the bundle
-				Err(err) => {
-					return Err(ExecutionError::InvalidBundleTransaction(tx_hash, err));
-				}
-			}
-		}
+		let (results, discarded) = bundle.execute_bundle(block, &mut db)?;
 
 		// reduce the bundle by removing discarded transactions
 		let bundle = discarded

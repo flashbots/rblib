@@ -6,12 +6,16 @@ use {
 		network::eip2718::Eip2718Error,
 		primitives::{B256, TxHash},
 	},
+	alloy_origin::primitives::FixedBytes,
 	core::{fmt::Debug, ops::Not},
 	reth::{
 		ethereum::primitives::{Recovered, crypto::RecoveryError},
 		primitives::SealedHeader,
 		revm::db::BundleState,
 	},
+	reth_errors::ProviderError,
+	reth_evm::revm::DatabaseRef,
+	reth_origin::revm::{State, db::WrapDatabaseRef},
 	serde::{Serialize, de::DeserializeOwned},
 };
 
@@ -73,6 +77,20 @@ pub trait Bundle<P: Platform>:
 	/// Checks if a transaction with the given hash may be removed from the
 	/// bundle without affecting its validity.
 	fn is_optional(&self, tx: &TxHash) -> bool;
+
+	fn execute_bundle<DB>(
+		&self,
+		block: &BlockContext<P>,
+		db: &mut State<WrapDatabaseRef<&DB>>,
+	) -> Result<
+		(
+			Vec<types::TransactionExecutionResult<P>>,
+			Vec<FixedBytes<32>>,
+		),
+		ExecutionError<P>,
+	>
+	where
+		DB: DatabaseRef<Error = ProviderError> + Debug;
 
 	/// An optional check for bundle implementations that have validity
 	/// requirements on the resulting state.

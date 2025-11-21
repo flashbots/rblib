@@ -5,6 +5,7 @@ use {
 		eips::{Decodable2718, Encodable2718},
 		primitives::{B256, Keccak256, TxHash},
 	},
+	alloy_origin::primitives::FixedBytes,
 	core::{
 		convert::Infallible,
 		fmt::Debug,
@@ -15,7 +16,14 @@ use {
 		primitives::SealedHeader,
 		rpc::types::mev::EthSendBundle,
 	},
+	reth_errors::ProviderError,
 	reth_ethereum::primitives::WithEncoded,
+	reth_evm::{
+		ConfigureEvm,
+		Evm,
+		revm::{DatabaseCommit, DatabaseRef, context::result::ExecResultAndState},
+	},
+	reth_origin::revm::{State, db::WrapDatabaseRef},
 	serde::{Deserialize, Deserializer, Serialize, Serializer},
 };
 
@@ -202,6 +210,63 @@ impl<P: Platform> Bundle<P> for FlashbotsBundle<P> {
 				.zip(self.inner.txs.iter())
 				.map(|(tx, bytes)| WithEncoded::new(bytes.clone(), tx)),
 		)
+	}
+
+	fn execute_bundle<DB>(
+		&self,
+		block: &BlockContext<P>,
+		mut db: &mut State<WrapDatabaseRef<&DB>>,
+	) -> Result<
+		(
+			Vec<types::TransactionExecutionResult<P>>,
+			Vec<FixedBytes<32>>,
+		),
+		ExecutionError<P>,
+	>
+	where
+		DB: DatabaseRef<Error = ProviderError> + Debug,
+	{
+		let evm_env = block.evm_env();
+		let evm_config = block.evm_config();
+
+		let mut discarded = Vec::new();
+		let mut results = Vec::with_capacity(self.transactions().len());
+
+		for transaction in self.transactions_encoded() {
+			let tx_hash = *transaction.tx_hash();
+			let optional = self.is_optional(&tx_hash);
+			let allowed_to_fail = self.is_allowed_to_fail(&tx_hash);
+
+			let result = evm_config
+				.evm_with_env(&mut db, evm_env.clone())
+				.transact(&transaction);
+
+			match result {
+				// Valid transaction or allowed to fail: include it in the bundle
+				Ok(ExecResultAndState { result, state })
+					if result.is_success() || allowed_to_fail =>
+				{
+					results.push(result);
+					db.commit(state);
+				}
+				// Optional failing transaction, not allowed to fail
+				// or optional invalid transaction: discard it
+				Ok(_) | Err(_) if optional => {
+					discarded.push(tx_hash);
+				}
+				// Non-Optional failing transaction, not allowed to fail: invalidate the
+				// bundle
+				Ok(_) => {
+					return Err(ExecutionError::BundleTransactionReverted(tx_hash));
+				}
+				// Non-Optional invalid transaction: invalidate the bundle
+				Err(err) => {
+					return Err(ExecutionError::InvalidBundleTransaction(tx_hash, err));
+				}
+			}
+		}
+
+		Ok((results, discarded))
 	}
 }
 
