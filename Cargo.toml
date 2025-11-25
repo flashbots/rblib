@@ -123,31 +123,31 @@ alloy-evm = "0.23.0"
 alloy-serde = "1.0.41"
 
 # Reth dependencies
-reth-origin = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2", package = "reth" }
-reth-evm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2" }
-reth-errors = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2" }
-reth-cli = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2" }
-reth-rpc-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2" }
-reth-basic-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2" }
-reth-ethereum-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2" }
-reth-ethereum = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2", features = [
+reth-origin = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", package = "reth" }
+reth-evm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-errors = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-cli = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-rpc-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-basic-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-ethereum-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-ethereum = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", features = [
     "node",
     "evm",
 ] }
-reth-transaction-pool = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2" }
-reth-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2" }
-reth-node-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2" }
-reth-ipc = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2", optional = true }
+reth-transaction-pool = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-node-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-ipc = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
 
 # Reth-optimism dependencies (optional)
 op-alloy = { version = "0.22.0", features = ["full"], optional = true }
-reth-optimism-node = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2", optional = true }
-reth-optimism-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2", optional = true }
-reth-optimism-forks = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2", optional = true }
-reth-optimism-rpc = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2", optional = true }
-reth-payload-util = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2", optional = true }
-reth-optimism-cli = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2", optional = true }
-reth-optimism-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.2", optional = true }
+reth-optimism-node = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
+reth-optimism-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
+reth-optimism-forks = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
+reth-optimism-rpc = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
+reth-payload-util = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
+reth-optimism-cli = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
+reth-optimism-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
 
 # test-utils
 rblib-tests-macros = { path = "src/test_utils/macros", optional = true }
