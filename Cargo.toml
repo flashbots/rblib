@@ -69,6 +69,10 @@ optimism = [
     "reth-optimism-chainspec",
     "reth-optimism-forks",
     "reth-optimism-primitives",
+    "reth-optimism-txpool",
+    "reth-optimism-rpc",
+    "reth-optimism-consensus",
+    "reth-optimism-evm",
     "reth-node-builder/op",
     "reth-payload-util",
     "reth-optimism-cli",
@@ -127,7 +131,9 @@ reth-origin = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", pac
 reth-evm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-errors = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-cli = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-cli-commands = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-rpc-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-rpc-eth-types = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-basic-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-ethereum-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-ethereum = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", features = [
@@ -136,8 +142,21 @@ reth-ethereum = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", f
 ] }
 reth-transaction-pool = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-payload-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-node-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-node-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-metrics = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-provider = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-ipc = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
+reth-tracing-otlp = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-eth-wire-types = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-network = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-node-types = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+
+# Revm dependencies
+revm-database = "9.0"
 
 # Reth-optimism dependencies (optional)
 op-alloy = { version = "0.22.0", features = ["full"], optional = true }
@@ -145,6 +164,9 @@ reth-optimism-node = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.
 reth-optimism-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
 reth-optimism-forks = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
 reth-optimism-rpc = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
+reth-optimism-txpool = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
+reth-optimism-consensus = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
+reth-optimism-evm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
 reth-payload-util = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
 reth-optimism-cli = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
 reth-optimism-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
