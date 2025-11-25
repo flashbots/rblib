@@ -3,7 +3,6 @@ use {
 	alloy::{
 		eips::Encodable2718,
 		optimism::consensus::OpPooledTransaction as AlloyPoolTx,
-		primitives::Bytes,
 	},
 	reth::{
 		api::NodeTypes,
@@ -61,8 +60,25 @@ impl Platform for Optimism {
 	where
 		P: traits::PlatformExecBounds<Self>,
 	{
+		let timestamp = attributes.payload_attributes.timestamp;
+		let extra_data = if chainspec.is_jovian_active_at_timestamp(timestamp) {
+			attributes
+				.get_jovian_extra_data(
+					chainspec.base_fee_params_at_timestamp(timestamp),
+				)
+				.unwrap_or_default()
+		} else if chainspec.is_holocene_active_at_timestamp(timestamp) {
+			attributes
+				.get_holocene_extra_data(
+					chainspec.base_fee_params_at_timestamp(timestamp),
+				)
+				.unwrap_or_default()
+		} else {
+			Default::default()
+		};
+
 		OpNextBlockEnvAttributes {
-			timestamp: attributes.payload_attributes.timestamp,
+			timestamp,
 			suggested_fee_recipient: attributes
 				.payload_attributes
 				.suggested_fee_recipient,
@@ -71,17 +87,7 @@ impl Platform for Optimism {
 			parent_beacon_block_root: attributes
 				.payload_attributes
 				.parent_beacon_block_root,
-			extra_data: if chainspec.is_holocene_active_at_timestamp(
-				attributes.payload_attributes.timestamp,
-			) {
-				attributes
-					.get_holocene_extra_data(chainspec.base_fee_params_at_timestamp(
-						attributes.payload_attributes.timestamp,
-					))
-					.unwrap_or_default()
-			} else {
-				Bytes::default()
-			},
+			extra_data,
 		}
 	}
 
