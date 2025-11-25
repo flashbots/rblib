@@ -3,6 +3,7 @@ use {
 	alloy::{
 		eips::Encodable2718,
 		optimism::consensus::OpPooledTransaction as AlloyPoolTx,
+		primitives::Bytes,
 	},
 	reth::{
 		api::NodeTypes,
@@ -74,7 +75,7 @@ impl Platform for Optimism {
 				)
 				.unwrap_or_default()
 		} else {
-			Default::default()
+			Bytes::default()
 		};
 
 		OpNextBlockEnvAttributes {
