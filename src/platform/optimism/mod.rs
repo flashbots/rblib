@@ -20,6 +20,7 @@ use {
 	serde::{Deserialize, Serialize},
 };
 
+pub mod ext;
 mod limits;
 pub use limits::OptimismDefaultLimits;
 

@@ -139,6 +139,7 @@ reth-ipc = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2", option
 
 # Reth-optimism dependencies (optional)
 op-alloy = { version = "0.20.0", features = ["full"], optional = true }
+op-alloy-flz = "0.13.1"
 reth-optimism-node = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2", optional = true }
 reth-optimism-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2", optional = true }
 reth-optimism-forks = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2", optional = true }

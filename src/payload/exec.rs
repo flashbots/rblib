@@ -428,15 +428,15 @@ impl<P: PlatformWithRpcTypes> IntoExecutable<P, Variant<7>>
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExecutionResult<P: Platform> {
 	/// The executable used to produce this result.
-	source: Executable<P>,
+	pub(crate) source: Executable<P>,
 
 	/// For transactions this is guaranteed to be a single-element vector,
 	/// for bundles this is guaranteed to be a vector of results for each
 	/// transaction in the bundle.
-	results: Vec<types::TransactionExecutionResult<P>>,
+	pub(crate) results: Vec<types::TransactionExecutionResult<P>>,
 
 	/// The aggregated state executing all transactions from the source.
-	state: BundleState,
+	pub(crate) state: BundleState,
 }
 
 impl<P: Platform> ExecutionResult<P> {
