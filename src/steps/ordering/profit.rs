@@ -99,7 +99,7 @@ mod tests {
 	}
 
 	#[rblib_test(Ethereum, Optimism)]
-	async fn correct_order_remains_unchanged_nonce_deps() {
+	async fn correct_order_remains_unchanged_nonce_deps<P: TestablePlatform>() {
 		let payload = vec![
 			(1, 0, 170),
 			(2, 0, 160),
