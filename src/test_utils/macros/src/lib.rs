@@ -30,20 +30,24 @@ impl Parse for PlatformList {
 pub fn rblib_test(args: TokenStream, input: TokenStream) -> TokenStream {
 	let platform_list = parse_macro_input!(args as PlatformList);
 	let original_fn = parse_macro_input!(input as ItemFn);
+	let sig = &original_fn.sig;
 
-	let original_fn_name = &original_fn.sig.ident;
-	let original_fn_block = &original_fn.block;
-	let original_fn_attrs = &original_fn.attrs;
+	let name = &sig.ident;
+	let attrs = &original_fn.attrs;
+	let generics = &sig.generics;
+	let where_clause = &generics.where_clause;
+	let output = &sig.output;
+	let block = &original_fn.block;
 
 	// Determine if the original function returns `eyre::Result<()>`
-	let returns_eyre_result_unit = match &original_fn.sig.output {
+	let returns_eyre_result_unit = match output {
 		syn::ReturnType::Default => false,
 		syn::ReturnType::Type(_, ty) => is_eyre_result_unit(ty),
 	};
 
 	// Preserve return type only when it is `eyre::Result<()>`
 	let generic_fn_output = if returns_eyre_result_unit {
-		let ty = match &original_fn.sig.output {
+		let ty = match output {
 			syn::ReturnType::Type(_, ty) => ty,
 			_ => unreachable!(),
 		};
@@ -55,23 +59,21 @@ pub fn rblib_test(args: TokenStream, input: TokenStream) -> TokenStream {
 	// Generate test functions for each platform
 	let test_functions = platform_list.platforms.iter().map(|platform| {
 		let platform_lowercase = platform.to_string().to_lowercase();
-		let test_fn_name = Ident::new(
-			&format!("{original_fn_name}_{platform_lowercase}"),
-			original_fn_name.span(),
-		);
+		let test_fn_name =
+			Ident::new(&format!("{name}_{platform_lowercase}"), name.span());
 
 		if returns_eyre_result_unit {
 			quote! {
 					#[tokio::test]
 					async fn #test_fn_name() {
-							#original_fn_name::<#platform>().await.unwrap();
+							#name::<#platform>().await.unwrap();
 					}
 			}
 		} else {
 			quote! {
 					#[tokio::test]
 					async fn #test_fn_name() {
-							#original_fn_name::<#platform>().await
+							#name::<#platform>().await
 					}
 			}
 		}
@@ -79,8 +81,10 @@ pub fn rblib_test(args: TokenStream, input: TokenStream) -> TokenStream {
 
 	// Generate the original function (made private and generic)
 	let expanded = quote! {
-			#(#original_fn_attrs)*
-			async fn #original_fn_name<P: TestablePlatform>() #generic_fn_output #original_fn_block
+			#(#attrs)*
+			async fn #name #generics () #generic_fn_output
+			#where_clause
+			#block
 
 			#(#test_functions)*
 	};

@@ -5,17 +5,40 @@ use {
 	super::*,
 	alloy::primitives::{Address, B256},
 	reth::{
-		chainspec::{DEV, EthChainSpec},
+		chainspec::EthChainSpec,
 		ethereum::{
 			node::engine::EthPayloadAttributes as PayloadAttributes,
 			primitives::AlloyBlockHeader,
 		},
-		node::builder::NodeTypes,
 		payload::builder::EthPayloadBuilderAttributes,
 		primitives::SealedHeader,
 	},
-	std::sync::LazyLock,
+	std::sync::{Arc, LazyLock},
 };
+
+/// A helper trait to provide a default testnet for a platform
+pub trait PlatformWithTestnet: Platform {
+	fn dev_chainspec() -> Arc<types::ChainSpec<Self>>;
+}
+
+/// Blanket implementation for ethereum
+impl PlatformWithTestnet for Ethereum {
+	fn dev_chainspec() -> Arc<types::ChainSpec<Self>> {
+		LazyLock::force(&crate::reth::chainspec::DEV)
+			.clone()
+			.with_funded_accounts()
+	}
+}
+
+/// Blanket implementation for optimism
+#[cfg(feature = "optimism")]
+impl PlatformWithTestnet for Optimism {
+	fn dev_chainspec() -> Arc<types::ChainSpec<Self>> {
+		LazyLock::force(&crate::reth::optimism::chainspec::OP_DEV)
+			.clone()
+			.with_funded_accounts()
+	}
+}
 
 /// Payload builder attributes typically come from the Consensus Layer with a
 /// forkchoiceUpdate request, and are typically obtained from instances of types
@@ -29,17 +52,23 @@ pub trait PayloadBuilderAttributesMocked<P: Platform> {
 	fn mocked(parent: &SealedHeader<types::Header<P>>) -> Self;
 }
 
+fn default_eth_payload_builder_attributed<P: Platform>(
+	parent: &SealedHeader<types::Header<P>>,
+) -> EthPayloadBuilderAttributes {
+	EthPayloadBuilderAttributes::new(parent.hash(), PayloadAttributes {
+		timestamp: parent.header().timestamp() + 1,
+		prev_randao: B256::random(),
+		suggested_fee_recipient: Address::random(),
+		withdrawals: Some(vec![]),
+		parent_beacon_block_root: Some(B256::ZERO),
+	})
+}
+
 impl<P: Platform> PayloadBuilderAttributesMocked<P>
 	for EthPayloadBuilderAttributes
 {
 	fn mocked(parent: &SealedHeader<types::Header<P>>) -> Self {
-		EthPayloadBuilderAttributes::new(parent.hash(), PayloadAttributes {
-			timestamp: parent.header().timestamp() + 1,
-			prev_randao: B256::random(),
-			suggested_fee_recipient: Address::random(),
-			withdrawals: Some(vec![]),
-			parent_beacon_block_root: Some(B256::ZERO),
-		})
+		default_eth_payload_builder_attributed::<P>(parent)
 	}
 }
 
@@ -69,16 +98,7 @@ impl<P: Platform> PayloadBuilderAttributesMocked<P>
 		);
 
 		OpPayloadBuilderAttributes {
-			payload_attributes: EthPayloadBuilderAttributes::new(
-				parent.hash(),
-				PayloadAttributes {
-					timestamp: parent.header().timestamp() + 1,
-					prev_randao: B256::random(),
-					suggested_fee_recipient: Address::random(),
-					withdrawals: Some(vec![]),
-					parent_beacon_block_root: Some(B256::ZERO),
-				},
-			),
+			payload_attributes: default_eth_payload_builder_attributed::<P>(parent),
 			transactions: vec![sequencer_tx],
 			gas_limit: Some(BASE_MAINNET_MAX_GAS_LIMIT),
 			..Default::default()
@@ -86,9 +106,8 @@ impl<P: Platform> PayloadBuilderAttributesMocked<P>
 	}
 }
 
-/// Allows the creation of a block context for the first block post genesis with
-/// all [`FundedAccounts`] pre-funded with 100 ETH.
-pub trait BlockContextMocked<P: Platform, Marker = ()> {
+/// Allows the creation of a block context for the first block post genesis
+pub trait BlockContextMocked<P: Platform> {
 	/// Returns an instance of a [`BlockContext`] that is rooted at the genesis
 	/// block the given platform's DEV chainspec.
 	///
@@ -100,53 +119,13 @@ pub trait BlockContextMocked<P: Platform, Marker = ()> {
 	fn mocked() -> BlockContext<P>;
 }
 
-impl<P: Platform> BlockContextMocked<P, Variant<0>> for BlockContext<P>
+impl<P> BlockContextMocked<P> for BlockContext<P>
 where
-	P: Platform<
-		NodeTypes: NodeTypes<
-			ChainSpec = types::ChainSpec<Ethereum>,
-			Primitives = types::Primitives<Ethereum>,
-			Payload = types::PayloadTypes<Ethereum>,
-		>,
-	>,
+	P: PlatformWithTestnet,
+	types::PayloadBuilderAttributes<P>: PayloadBuilderAttributesMocked<P>,
 {
 	fn mocked() -> BlockContext<P> {
-		let chainspec = LazyLock::force(&DEV).clone().with_funded_accounts();
-		let provider_factory = GenesisProviderFactory::<P>::new(chainspec.clone());
-		let base_state = provider_factory.state_provider();
-
-		let parent = SealedHeader::new(
-			chainspec.genesis_header().clone(),
-			chainspec.genesis_hash(),
-		);
-
-		let payload_attribs = <EthPayloadBuilderAttributes as PayloadBuilderAttributesMocked<P>>::mocked(&parent);
-
-		BlockContext::<P>::new(
-			parent,
-			payload_attribs,
-			base_state,
-			chainspec.clone(),
-			None,
-		)
-		.expect("Failed to create mocked block context")
-	}
-}
-
-#[cfg(feature = "optimism")]
-impl<P: Platform> BlockContextMocked<P, Variant<1>> for BlockContext<P>
-where
-	P: Platform<
-		NodeTypes: NodeTypes<
-			ChainSpec = types::ChainSpec<Optimism>,
-			Primitives = types::Primitives<Optimism>,
-			Payload = types::PayloadTypes<Optimism>,
-		>,
-	>,
-{
-	fn mocked() -> BlockContext<P> {
-		use reth::optimism::{chainspec::OP_DEV, node::OpPayloadBuilderAttributes};
-		let chainspec = LazyLock::force(&OP_DEV).clone().with_funded_accounts();
+		let chainspec = P::dev_chainspec();
 		let provider_factory = GenesisProviderFactory::<P>::new(chainspec.clone());
 		let base_state = provider_factory.state_provider();
 
@@ -156,9 +135,9 @@ where
 		);
 
 		let payload_attributes =
-			<OpPayloadBuilderAttributes<types::Transaction<P>> as PayloadBuilderAttributesMocked<P>>::mocked(
-				&parent,
-			);
+			<types::PayloadBuilderAttributes<P> as PayloadBuilderAttributesMocked<
+				P,
+			>>::mocked(&parent);
 
 		BlockContext::<P>::new(
 			parent,

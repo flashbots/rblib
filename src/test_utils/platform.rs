@@ -36,7 +36,7 @@ use {
 /// variants of all internal unit tests for all platforms. You can use
 /// [`rblib_test`] with externally defined platforms as long as they implement
 /// this trait.
-pub trait TestNodeFactory<P: Platform + PlatformWithRpcTypes> {
+pub trait TestNodeFactory<P: PlatformWithRpcTypes> {
 	type ConsensusDriver: ConsensusDriver<P>;
 	type CliExtArgs: Default + Send + Sync;
 
@@ -73,8 +73,7 @@ pub trait TestNodeFactory<P: Platform + PlatformWithRpcTypes> {
 }
 
 /// A helper trait that is automatically implemented for all platform
-/// implementations that have a `TestNodeFactory` implementation and a
-/// `NetworkSelector` implementation.
+/// implementations that have a `TestNodeFactory` implementation and rpc types
 ///
 /// This allows the `rblib_test` macro to automatically synthesize tests for
 /// many platforms without needing to create separate versions of the test for
