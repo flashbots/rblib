@@ -477,13 +477,22 @@ impl<P: Platform> ExecutionResult<P> {
 mod tests {
 	use {
 		super::*,
-		crate::test_utils::{BlockContextMocked, test_bundle, test_tx, test_txs},
+		crate::test_utils::{
+			BlockContextMocked,
+			TestablePlatform,
+			test_bundle,
+			test_tx,
+			test_txs,
+		},
+		rblib_tests_macros::rblib_test,
 	};
 
-	#[test]
-	fn test_executable_transaction_returns_single_transaction() {
-		let tx = test_tx::<Ethereum>(0, 0);
-		let executable = Executable::<Ethereum>::Transaction(tx.clone());
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_executable_transaction_returns_single_transaction<
+		P: TestablePlatform,
+	>() {
+		let tx = test_tx::<P>(0, 0);
+		let executable = Executable::<P>::Transaction(tx.clone());
 
 		assert_eq!(executable.transactions().len(), 1);
 		assert_eq!(executable.transactions()[0], tx);
@@ -491,10 +500,13 @@ mod tests {
 		assert!(!executable.is_bundle());
 	}
 
-	#[test]
-	fn test_executable_bundle_returns_all_transactions() {
-		let (bundle, txs) = test_bundle::<Ethereum>(0, 0);
-		let executable = Executable::<Ethereum>::Bundle(bundle);
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_executable_bundle_returns_all_transactions<P>()
+	where
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+	{
+		let (bundle, txs) = test_bundle::<P>(0, 0);
+		let executable = Executable::<P>::Bundle(bundle);
 
 		assert_eq!(executable.transactions().len(), txs.len());
 		assert_eq!(executable.transactions(), txs.as_slice());
@@ -502,11 +514,15 @@ mod tests {
 		assert!(executable.is_bundle());
 	}
 
-	#[test]
-	fn test_execute_transaction_success() {
-		let block = BlockContext::<Ethereum>::mocked();
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_execute_transaction_success<P>()
+	where
+		P: TestablePlatform,
+		BlockContext<P>: BlockContextMocked<P>,
+	{
+		let block = BlockContext::<P>::mocked();
 		let checkpoint = block.start();
-		let tx = test_tx::<Ethereum>(0, 0);
+		let tx = test_tx::<P>(0, 0);
 
 		let result =
 			Executable::execute_transaction(tx.clone(), &block, &checkpoint);
@@ -518,11 +534,15 @@ mod tests {
 		assert!(exec_result.results()[0].is_success());
 	}
 
-	#[test]
-	fn test_execute_transaction_produces_state_changes() {
-		let block = BlockContext::<Ethereum>::mocked();
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_execute_transaction_produces_state_changes<P>()
+	where
+		P: TestablePlatform,
+		BlockContext<P>: BlockContextMocked<P>,
+	{
+		let block = BlockContext::<P>::mocked();
 		let checkpoint = block.start();
-		let tx = test_tx::<Ethereum>(0, 0);
+		let tx = test_tx::<P>(0, 0);
 
 		let result = Executable::execute_transaction(tx, &block, &checkpoint);
 
@@ -531,23 +551,31 @@ mod tests {
 		assert!(exec_result.gas_used() > 0);
 	}
 
-	#[test]
-	fn test_execute_via_execute_method() {
-		let block = BlockContext::<Ethereum>::mocked();
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_execute_via_execute_method<P>()
+	where
+		P: TestablePlatform,
+		BlockContext<P>: BlockContextMocked<P>,
+	{
+		let block = BlockContext::<P>::mocked();
 		let checkpoint = block.start();
-		let tx = test_tx::<Ethereum>(0, 0);
-		let executable = Executable::<Ethereum>::Transaction(tx);
+		let tx = test_tx::<P>(0, 0);
+		let executable = Executable::<P>::Transaction(tx);
 
 		let result = executable.execute(&block, &checkpoint);
 
 		assert_eq!(result.unwrap().results().len(), 1);
 	}
 
-	#[test]
-	fn test_execute_bundle_all_successful() {
-		let block = BlockContext::<Ethereum>::mocked();
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_execute_bundle_all_successful<P>()
+	where
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+		BlockContext<P>: BlockContextMocked<P>,
+	{
+		let block = BlockContext::<P>::mocked();
 		let checkpoint = block.start();
-		let (bundle, txs) = test_bundle::<Ethereum>(0, 0);
+		let (bundle, txs) = test_bundle::<P>(0, 0);
 
 		let result = Executable::execute_bundle(bundle, &block, &checkpoint);
 
@@ -558,11 +586,15 @@ mod tests {
 		assert_eq!(exec_result.transactions(), txs.as_slice());
 	}
 
-	#[test]
-	fn test_execute_bundle_aggregates_gas() {
-		let block = BlockContext::<Ethereum>::mocked();
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_execute_bundle_aggregates_gas<P>()
+	where
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+		BlockContext<P>: BlockContextMocked<P>,
+	{
+		let block = BlockContext::<P>::mocked();
 		let checkpoint = block.start();
-		let (bundle, _) = test_bundle::<Ethereum>(0, 0);
+		let (bundle, _) = test_bundle::<P>(0, 0);
 
 		let result = Executable::execute_bundle(bundle, &block, &checkpoint);
 
@@ -573,17 +605,18 @@ mod tests {
 		assert!(total_gas > 0);
 	}
 
-	#[test]
-	fn test_execute_bundle_sequential_execution() {
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_execute_bundle_sequential_execution<P>()
+	where
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+		BlockContext<P>: BlockContextMocked<P>,
+	{
 		// Each transaction in a bundle executes on the state from the previous
-		let block = BlockContext::<Ethereum>::mocked();
+		let block = BlockContext::<P>::mocked();
 		let checkpoint = block.start();
 		// Use the same account for all transactions to test sequential nonces
-		let txs = test_txs::<Ethereum>(0, 0, 3);
-		let bundle = FlashbotsBundle::<Ethereum>::default()
-			.with_transaction(txs[0].clone())
-			.with_transaction(txs[1].clone())
-			.with_transaction(txs[2].clone());
+		let txs = test_txs::<P>(0, 0, 3);
+		let (bundle, _) = test_bundle::<P>(0, 0);
 
 		let result = Executable::execute_bundle(bundle, &block, &checkpoint);
 
@@ -592,90 +625,103 @@ mod tests {
 		assert!(exec_result.results().iter().all(|r| r.is_success()));
 	}
 
-	#[test]
-	fn test_into_executable_from_recovered_transaction() {
-		let tx = test_tx::<Ethereum>(0, 0);
-		let result: Result<Executable<Ethereum>, _> =
-			IntoExecutable::<Ethereum, Variant<2>>::try_into_executable(tx.clone());
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_into_executable_from_recovered_transaction<P: TestablePlatform>() {
+		let tx = test_tx::<P>(0, 0);
+		let result: Result<Executable<P>, _> =
+			IntoExecutable::<P, Variant<2>>::try_into_executable(tx.clone());
 
 		let executable = result.unwrap();
 		assert!(executable.is_transaction());
 		assert_eq!(executable.transactions()[0], tx);
 	}
 
-	#[test]
-	fn test_into_executable_from_bundle() {
-		let (bundle, _) = test_bundle::<Ethereum>(0, 0);
-		let result: Result<Executable<Ethereum>, _> =
-			IntoExecutable::<Ethereum, Variant<3>>::try_into_executable(bundle);
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_into_executable_from_bundle<P>()
+	where
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+	{
+		let (bundle, _) = test_bundle::<P>(0, 0);
+		let result: Result<Executable<P>, _> =
+			IntoExecutable::<P, Variant<3>>::try_into_executable(bundle);
 
 		assert!(result.unwrap().is_bundle());
 	}
 
-	#[test]
-	fn test_into_executable_from_executable() {
-		let tx = test_tx::<Ethereum>(0, 0);
-		let executable = Executable::<Ethereum>::Transaction(tx);
-		let result: Result<Executable<Ethereum>, _> =
-			IntoExecutable::<Ethereum, Variant<4>>::try_into_executable(
-				executable.clone(),
-			);
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_into_executable_from_executable<P: TestablePlatform>() {
+		let tx = test_tx::<P>(0, 0);
+		let executable = Executable::<P>::Transaction(tx);
+		let result: Result<Executable<P>, _> =
+			IntoExecutable::<P, Variant<4>>::try_into_executable(executable.clone());
 
 		assert_eq!(result.unwrap(), executable);
 	}
 
-	#[test]
-	fn test_into_executable_from_checkpoint() {
-		let block = BlockContext::<Ethereum>::mocked();
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_into_executable_from_checkpoint<P>()
+	where
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+		BlockContext<P>: BlockContextMocked<P>,
+	{
+		let block = BlockContext::<P>::mocked();
 		let checkpoint = block.start();
-		let tx = test_tx::<Ethereum>(0, 0);
+		let tx = test_tx::<P>(0, 0);
 		let checkpoint_with_tx = checkpoint.apply(tx.clone()).unwrap();
 
-		let result: Result<Executable<Ethereum>, _> =
-			IntoExecutable::<Ethereum, Variant<5>>::try_into_executable(
-				checkpoint_with_tx,
-			);
+		let result: Result<Executable<P>, _> =
+			IntoExecutable::<P, Variant<5>>::try_into_executable(checkpoint_with_tx);
 
 		let executable = result.unwrap();
 		assert!(executable.is_transaction());
 		assert_eq!(executable.transactions()[0], tx);
 	}
 
-	#[test]
-	fn test_into_executable_from_checkpoint_ref() {
-		let block = BlockContext::<Ethereum>::mocked();
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_into_executable_from_checkpoint_ref<P>()
+	where
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+		BlockContext<P>: BlockContextMocked<P>,
+	{
+		let block = BlockContext::<P>::mocked();
 		let checkpoint = block.start();
-		let tx = test_tx::<Ethereum>(0, 0);
+		let tx = test_tx::<P>(0, 0);
 		let checkpoint_with_tx = checkpoint.apply(tx.clone()).unwrap();
 
-		let result: Result<Executable<Ethereum>, _> =
-			IntoExecutable::<Ethereum, Variant<6>>::try_into_executable(
-				&checkpoint_with_tx,
-			);
+		let result: Result<Executable<P>, _> =
+			IntoExecutable::<P, Variant<6>>::try_into_executable(&checkpoint_with_tx);
 
 		let executable = result.unwrap();
 		assert!(executable.is_transaction());
 		assert_eq!(executable.transactions()[0], tx);
 	}
 
-	#[test]
-	fn test_into_executable_from_barrier_checkpoint_fails() {
-		let block = BlockContext::<Ethereum>::mocked();
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_into_executable_from_barrier_checkpoint_fails<P>()
+	where
+		P: TestablePlatform,
+		BlockContext<P>: BlockContextMocked<P>,
+	{
+		let block = BlockContext::<P>::mocked();
 		let checkpoint = block.start();
 		let barrier = checkpoint.barrier();
 
-		let result: Result<Executable<Ethereum>, _> =
-			IntoExecutable::<Ethereum, Variant<6>>::try_into_executable(&barrier);
+		let result: Result<Executable<P>, _> =
+			IntoExecutable::<P, Variant<6>>::try_into_executable(&barrier);
 
 		assert!(result.is_err());
 	}
 
-	#[test]
-	fn test_execution_result_source() {
-		let block = BlockContext::<Ethereum>::mocked();
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_execution_result_source<P>()
+	where
+		P: TestablePlatform,
+		BlockContext<P>: BlockContextMocked<P>,
+	{
+		let block = BlockContext::<P>::mocked();
 		let checkpoint = block.start();
-		let tx = test_tx::<Ethereum>(0, 0);
-		let executable = Executable::<Ethereum>::Transaction(tx.clone());
+		let tx = test_tx::<P>(0, 0);
+		let executable = Executable::<P>::Transaction(tx.clone());
 
 		let result = executable.execute(&block, &checkpoint).unwrap();
 
@@ -685,49 +731,59 @@ mod tests {
 		}
 	}
 
-	#[test]
-	fn test_execution_result_transactions() {
-		let block = BlockContext::<Ethereum>::mocked();
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_execution_result_transactions<P>()
+	where
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+		BlockContext<P>: BlockContextMocked<P>,
+	{
+		let block = BlockContext::<P>::mocked();
 		let checkpoint = block.start();
-		let (bundle, txs) = test_bundle::<Ethereum>(0, 0);
-		let executable = Executable::<Ethereum>::Bundle(bundle);
+		let (bundle, txs) = test_bundle::<P>(0, 0);
+		let executable = Executable::<P>::Bundle(bundle);
 
 		let result = executable.execute(&block, &checkpoint).unwrap();
 
 		assert_eq!(result.transactions(), txs.as_slice());
 	}
 
-	#[test]
-	fn test_executable_hash_transaction() {
-		let tx = test_tx::<Ethereum>(0, 0);
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_executable_hash_transaction<P: TestablePlatform>() {
+		let tx = test_tx::<P>(0, 0);
 		let expected_hash = *tx.tx_hash();
-		let executable = Executable::<Ethereum>::Transaction(tx);
+		let executable = Executable::<P>::Transaction(tx);
 
 		assert_eq!(executable.hash(), expected_hash);
 	}
 
-	#[test]
-	fn test_executable_hash_bundle() {
-		let (bundle, _) = test_bundle::<Ethereum>(0, 0);
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_executable_hash_bundle<P>()
+	where
+		P: TestablePlatform<Bundle = FlashbotsBundle<P>>,
+	{
+		let (bundle, _) = test_bundle::<P>(0, 0);
 		let expected_hash = bundle.hash();
-		let executable = Executable::<Ethereum>::Bundle(bundle);
+		let executable = Executable::<P>::Bundle(bundle);
 
 		assert_eq!(executable.hash(), expected_hash);
 	}
 
-	#[test]
-	fn test_execution_error_invalid_signature_display() {
-		let err =
-			ExecutionError::<Ethereum>::InvalidSignature(RecoveryError::new());
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_execution_error_invalid_signature_display<P: TestablePlatform>() {
+		let err = ExecutionError::<P>::InvalidSignature(RecoveryError::new());
 		let display = format!("{err}");
 		assert!(display.contains("Invalid signature"));
 	}
 
-	#[test]
-	fn test_execution_result_state_is_bundle_state() {
-		let block = BlockContext::<Ethereum>::mocked();
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_execution_result_state_is_bundle_state<P>()
+	where
+		P: TestablePlatform,
+		BlockContext<P>: BlockContextMocked<P>,
+	{
+		let block = BlockContext::<P>::mocked();
 		let checkpoint = block.start();
-		let tx = test_tx::<Ethereum>(0, 0);
+		let tx = test_tx::<P>(0, 0);
 
 		let result =
 			Executable::execute_transaction(tx, &block, &checkpoint).unwrap();
@@ -736,11 +792,15 @@ mod tests {
 		assert!(!result.state().is_empty());
 	}
 
-	#[test]
-	fn test_execution_result_clone() {
-		let block = BlockContext::<Ethereum>::mocked();
+	#[rblib_test(Ethereum, Optimism)]
+	fn test_execution_result_clone<P>()
+	where
+		P: TestablePlatform,
+		BlockContext<P>: BlockContextMocked<P>,
+	{
+		let block = BlockContext::<P>::mocked();
 		let checkpoint = block.start();
-		let tx = test_tx::<Ethereum>(0, 0);
+		let tx = test_tx::<P>(0, 0);
 
 		let result =
 			Executable::execute_transaction(tx, &block, &checkpoint).unwrap();
