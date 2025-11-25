@@ -1,4 +1,5 @@
-//! Example of extending an existing platform with a custom bundle type.
+//! Example of a custom platform extending an existing platform (`Optimism`)
+//! with a custom bundle type.
 //!
 //! In this example, we define a new platform type that inherits all properties
 //! and behaviors of the `Optimism` platform but uses a custom bundle type that
@@ -22,7 +23,7 @@ use {
 		revm::db::BundleState,
 	},
 	serde::{Deserialize, Serialize},
-	std::sync::Arc,
+	std::sync::{Arc, LazyLock},
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -60,6 +61,14 @@ impl Platform for CustomPlatform {
 		P: traits::PlatformExecBounds<Self>,
 	{
 		Optimism::build_payload::<P>(payload, provider)
+	}
+}
+
+impl PlatformWithTestnet for CustomPlatform {
+	fn dev_chainspec() -> Arc<types::ChainSpec<Self>> {
+		LazyLock::force(&crate::reth::optimism::chainspec::OP_DEV)
+			.clone()
+			.with_funded_accounts()
 	}
 }
 
