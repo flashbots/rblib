@@ -16,7 +16,6 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            ~/.rustup
             ~/.cargo/registry
             ~/.cargo/git
             target
@@ -39,7 +38,6 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            ~/.rustup
             ~/.cargo/registry
             ~/.cargo/git
             target
@@ -73,7 +71,6 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            ~/.rustup
             ~/.cargo/registry
             ~/.cargo/git
             target
