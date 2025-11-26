@@ -36,7 +36,7 @@ where
 	B: Bundle<P>,
 	P: Platform,
 {
-	fn new(bundle: B) -> Self {
+	pub fn new(bundle: B) -> Self {
 		let txs = bundle.transactions();
 		let mut nonces = Vec::with_capacity(txs.len());
 		for tx in txs {
