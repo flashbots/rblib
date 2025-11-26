@@ -53,12 +53,24 @@ impl Platform for Optimism {
 		chainspec: &types::ChainSpec<P>,
 		parent: &types::Header<P>,
 		attributes: &types::PayloadBuilderAttributes<P>,
-	) -> types::NextBlockEnvContext<P>
+	) -> Result<types::NextBlockEnvContext<P>, types::EvmEnvError<P>>
 	where
 		P: traits::PlatformExecBounds<Self>,
 	{
-		OpNextBlockEnvAttributes {
-			timestamp: attributes.payload_attributes.timestamp,
+		let t = attributes.payload_attributes.timestamp;
+		let default_base_fee_param = chainspec.base_fee_params_at_timestamp(t);
+
+		let extra_data = match (
+			chainspec.is_jovian_active_at_timestamp(t),
+			chainspec.is_holocene_active_at_timestamp(t),
+		) {
+			(true, _) => attributes.get_jovian_extra_data(default_base_fee_param),
+			(_, true) => attributes.get_holocene_extra_data(default_base_fee_param),
+			_ => Ok(Bytes::default()),
+		}?;
+
+		Ok(OpNextBlockEnvAttributes {
+			timestamp: t,
 			suggested_fee_recipient: attributes
 				.payload_attributes
 				.suggested_fee_recipient,
@@ -67,18 +79,8 @@ impl Platform for Optimism {
 			parent_beacon_block_root: attributes
 				.payload_attributes
 				.parent_beacon_block_root,
-			extra_data: if chainspec.is_holocene_active_at_timestamp(
-				attributes.payload_attributes.timestamp,
-			) {
-				attributes
-					.get_holocene_extra_data(chainspec.base_fee_params_at_timestamp(
-						attributes.payload_attributes.timestamp,
-					))
-					.unwrap_or_default()
-			} else {
-				Bytes::default()
-			},
-		}
+			extra_data,
+		})
 	}
 
 	fn build_payload<P>(

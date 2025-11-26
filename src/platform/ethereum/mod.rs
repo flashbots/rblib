@@ -77,19 +77,22 @@ impl Platform for Ethereum {
 		EthEvmConfig::new(chainspec)
 	}
 
+	/// Prepares a block environment containing all the information needed to
+	/// build a new block. This is infallible for Ethereum and can be safely
+	/// unwrapped.
 	fn next_block_environment_context<P>(
 		_: &types::ChainSpec<Self>,
 		parent: &types::Header<Self>,
 		attributes: &types::PayloadBuilderAttributes<Self>,
-	) -> types::NextBlockEnvContext<Self> {
-		NextBlockEnvAttributes {
+	) -> Result<types::NextBlockEnvContext<Self>, types::EvmEnvError<Self>> {
+		Ok(NextBlockEnvAttributes {
 			timestamp: attributes.timestamp,
 			suggested_fee_recipient: attributes.suggested_fee_recipient,
 			prev_randao: attributes.prev_randao,
 			gas_limit: EthereumBuilderConfig::new().gas_limit(parent.gas_limit()),
 			parent_beacon_block_root: attributes.parent_beacon_block_root,
 			withdrawals: Some(attributes.withdrawals.clone()),
-		}
+		})
 	}
 
 	fn build_payload<P>(

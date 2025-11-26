@@ -103,7 +103,7 @@ pub trait Platform:
 		chainspec: &types::ChainSpec<P>,
 		parent: &types::Header<P>,
 		attributes: &types::PayloadBuilderAttributes<P>,
-	) -> types::NextBlockEnvContext<P>
+	) -> Result<types::NextBlockEnvContext<P>, types::EvmEnvError<P>>
 	where
 		P: traits::PlatformExecBounds<Self>;
 

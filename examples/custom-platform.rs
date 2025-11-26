@@ -47,7 +47,8 @@ impl Platform for CustomPlatform {
 		chainspec: &types::ChainSpec<Optimism>,
 		parent: &types::Header<Optimism>,
 		attributes: &types::PayloadBuilderAttributes<Optimism>,
-	) -> types::NextBlockEnvContext<Optimism> {
+	) -> Result<types::NextBlockEnvContext<Optimism>, types::EvmEnvError<Optimism>>
+	{
 		Optimism::next_block_environment_context::<Self>(
 			chainspec, parent, attributes,
 		)

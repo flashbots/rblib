@@ -75,7 +75,8 @@ impl<P: Platform> BlockContext<P> {
 			&chainspec,
 			parent.header(),
 			&attribs,
-		);
+		)
+		.map_err(Error::EvmEnv)?;
 
 		let evm_config = P::evm_config::<P>(Arc::clone(&chainspec));
 		let evm_env = evm_config
