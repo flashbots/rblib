@@ -105,8 +105,12 @@ impl<P: Platform> BlockContext<P> {
 				base_state,
 				evm_config,
 				chainspec,
+				metrics: Default::default(),
 			}),
 		})
+	}
+	pub fn metrics(&self) -> Arc<DatabaseMetrics> {
+		self.inner.metrics.clone()
 	}
 }
 
@@ -218,6 +222,17 @@ struct BlockContextInner<P: Platform> {
 	/// are used to configure the EVM environment and the next block environment
 	/// for the block that is being built.
 	chainspec: Arc<types::ChainSpec<P>>,
+
+
+	/// Metrics related to database execution duration for all checkpoints
+	metrics: Arc<DatabaseMetrics>,
+}
+
+#[derive(MetricsSet)]
+pub struct DatabaseMetrics {
+	pub basic_ref: Histogram,
+	pub code_by_hash_ref: Histogram,
+	pub storage_ref: Histogram,
 }
 
 impl<P: Platform> core::fmt::Debug for BlockContext<P> {

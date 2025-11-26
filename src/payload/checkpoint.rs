@@ -384,7 +384,7 @@ impl<P: Platform> DatabaseRef for Checkpoint<P> {
 		// we want to probe the history of checkpoints in reverse order,
 		// starting from the most recent one, to find the first checkpoint
 		// that has touched the given address.
-
+		let start = Instant::now();
 		if let Some(account) = self.iter().find_map(|checkpoint| {
 			checkpoint
 				.result()?
@@ -393,6 +393,7 @@ impl<P: Platform> DatabaseRef for Checkpoint<P> {
 				.and_then(|account| account.info.as_ref())
 				.cloned()
 		}) {
+			self.inner.block.metrics().basic_ref.record(start.elapsed());
 			return Ok(Some(account));
 		}
 
@@ -412,11 +413,13 @@ impl<P: Platform> DatabaseRef for Checkpoint<P> {
 		// we want to probe the history of checkpoints in reverse order,
 		// starting from the most recent one, to find the first checkpoint
 		// that has created the code with the given hash.
+		let start = Instant::now();
 
 		if let Some(code) = self
 			.iter()
 			.find_map(|checkpoint| checkpoint.result()?.state().bytecode(&code_hash))
 		{
+			self.inner.block.metrics().code_by_hash_ref.record(start.elapsed());
 			return Ok(code);
 		}
 
@@ -439,6 +442,7 @@ impl<P: Platform> DatabaseRef for Checkpoint<P> {
 	) -> Result<StorageValue, Self::Error> {
 		// traverse checkpoint history looking for the first checkpoint that
 		// has touched the given address.
+		let start = Instant::now();
 
 		if let Some(value) = self.iter().find_map(|checkpoint| {
 			checkpoint
@@ -448,6 +452,7 @@ impl<P: Platform> DatabaseRef for Checkpoint<P> {
 				.and_then(|account| account.storage.get(&index))
 				.map(|slot| slot.present_value)
 		}) {
+			self.inner.block.metrics().storage_ref.record(start.elapsed());
 			return Ok(value);
 		}
 
