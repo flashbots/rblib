@@ -105,7 +105,7 @@ impl<P: Platform> BlockContext<P> {
 				base_state,
 				evm_config,
 				chainspec,
-				metrics: Default::default(),
+				metrics: Arc::new(DatabaseMetrics::with_scope("block")),
 			}),
 		})
 	}
