@@ -3,7 +3,11 @@
 
 use {
 	super::*,
-	alloy::primitives::{Address, B256},
+	crate::test_utils::optimism::{
+		DEFAULT_EIP_1559_PARAMS,
+		DEFAULT_MIN_BASE_FEE,
+	},
+	alloy::primitives::{Address, B64, B256},
 	reth::{
 		chainspec::EthChainSpec,
 		ethereum::{
@@ -101,6 +105,8 @@ impl<P: Platform> PayloadBuilderAttributesMocked<P>
 			payload_attributes: default_eth_payload_builder_attributed::<P>(parent),
 			transactions: vec![sequencer_tx],
 			gas_limit: Some(BASE_MAINNET_MAX_GAS_LIMIT),
+			min_base_fee: Some(DEFAULT_MIN_BASE_FEE),
+			eip_1559_params: Some(B64::from(DEFAULT_EIP_1559_PARAMS)),
 			..Default::default()
 		}
 	}

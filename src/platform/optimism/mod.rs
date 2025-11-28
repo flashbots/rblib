@@ -11,7 +11,11 @@ use {
 		chainspec::EthChainSpec,
 		optimism::{
 			forks::OpHardforks,
-			node::{payload::builder::*, txpool::OpPooledTransaction, *},
+			node::{
+				payload::{builder::*, config::OpBuilderConfig},
+				txpool::OpPooledTransaction,
+				*,
+			},
 		},
 		payload::{builder::*, util::PayloadTransactionsFixed},
 		primitives::Recovered,
@@ -108,7 +112,6 @@ impl Platform for Optimism {
 
 		let context = OpPayloadBuilderCtx {
 			evm_config: block.evm_config(),
-			da_config: OpDAConfig::default(),
 			chain_spec: block.chainspec().clone(),
 			config: PayloadConfig::<types::PayloadBuilderAttributes<P>, _>::new(
 				block.parent().clone().into(),
@@ -116,6 +119,7 @@ impl Platform for Optimism {
 			),
 			cancel: CancelOnDrop::default(),
 			best_payload: None,
+			builder_config: OpBuilderConfig::default(),
 		};
 
 		// Invoke the builder implementation from reth-optimism-node.
@@ -161,7 +165,7 @@ fn extract_external_txs<P>(
 	payload: &Checkpoint<P>,
 ) -> Vec<Recovered<types::Transaction<Optimism>>>
 where
-	P: Platform<NodeTypes = types::NodeTypes<Optimism>>,
+	P: traits::PlatformExecBounds<Optimism>,
 {
 	let sequencer_txs = payload
 		.block()

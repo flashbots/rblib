@@ -1,4 +1,4 @@
-use {crate::prelude::*, std::sync::Arc};
+use {crate::prelude::*, ext::*, std::sync::Arc};
 
 /// This step appends the sequencer transactions that are defined in the payload
 /// attributes parameter from the CL node into the payload under construction.
@@ -27,6 +27,7 @@ where
 		}
 
 		let mut gas_used = 0;
+		let mut da_bytes_used = 0;
 
 		// Apply all sequencer transactions to the payload.
 		let mut payload = payload;
@@ -42,7 +43,7 @@ where
 				}
 			};
 
-			// ensure that sequencer transactions do not exceed the gas limit.
+			// ensure that sequencer transactions do not exceed limits.
 			// If this happens, fail the whole pipeline because we will never be able
 			// to build a valid payload that fits the gas limit.
 			gas_used += payload.gas_used();
@@ -51,6 +52,32 @@ where
 					format!(
 						"Sequencer transactions exceed block gas limit: {gas_used} > {}",
 						ctx.limits().gas_limit
+					)
+					.into(),
+				)
+				.into();
+			}
+			da_bytes_used += payload.da_bytes_used();
+			if let Some(max_block_da) = ctx.limits().ext.max_block_da
+				&& da_bytes_used > max_block_da
+			{
+				return PayloadBuilderError::Other(
+					format!(
+						"Sequencer transactions exceed data availability bytes limit: \
+						 {da_bytes_used} > {max_block_da}",
+					)
+					.into(),
+				)
+				.into();
+			}
+			// todo: is this necessary?
+			if let Some(max_tx_da) = ctx.limits().ext.max_tx_da
+				&& payload.da_bytes_used() > max_tx_da
+			{
+				return PayloadBuilderError::Other(
+					format!(
+						"A sequencer transaction exceed data availability tx bytes limit: \
+						 {da_bytes_used} > {max_tx_da}",
 					)
 					.into(),
 				)

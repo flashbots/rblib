@@ -1,6 +1,6 @@
 use {
 	super::*,
-	crate::{alloy, prelude::*, reth},
+	crate::{alloy, alloy::primitives::B64, prelude::*, reth},
 	alloy::{
 		eips::{BlockNumberOrTag, eip7685::Requests},
 		optimism::{
@@ -51,6 +51,12 @@ impl TestNodeFactory<Optimism> for Optimism {
 	}
 }
 
+pub(super) const DEFAULT_DENOMINATOR: u32 = 50;
+pub(super) const DEFAULT_ELASTICITY: u32 = 2;
+pub(super) const DEFAULT_EIP_1559_PARAMS: u64 =
+	((DEFAULT_DENOMINATOR as u64) << 32) | (DEFAULT_ELASTICITY as u64);
+pub(super) const DEFAULT_MIN_BASE_FEE: u64 = 0;
+
 pub struct OptimismConsensusDriver;
 impl<P> ConsensusDriver<P> for OptimismConsensusDriver
 where
@@ -89,6 +95,8 @@ where
 				TX_SET_L1_BLOCK_OP_MAINNET_BLOCK_124665056.into(),
 			]),
 			gas_limit: Some(BASE_MAINNET_MAX_GAS_LIMIT),
+			min_base_fee: Some(DEFAULT_MIN_BASE_FEE),
+			eip_1559_params: Some(B64::from(DEFAULT_EIP_1559_PARAMS)),
 			..Default::default()
 		};
 

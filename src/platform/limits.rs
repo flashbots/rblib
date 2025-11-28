@@ -38,9 +38,7 @@ pub struct Limits<P: Platform> {
 impl<P: Platform> Copy for Limits<P> {}
 
 /// This trait must be implemented by extension limits
-pub trait LimitExtension:
-	Copy + Debug + Default + Send + Sync + 'static
-{
+pub trait LimitExtension: Default + Copy + Debug + Send + Sync {
 	#[must_use]
 	fn clamp(&self, other: &Self) -> Self;
 }
@@ -97,6 +95,12 @@ impl<P: Platform> Limits<P> {
 	#[must_use]
 	pub fn with_gas_limit(mut self, gas_limit: u64) -> Self {
 		self.gas_limit = gas_limit;
+		self
+	}
+
+	#[must_use]
+	pub fn with_ext(mut self, ext: P::ExtraLimits) -> Self {
+		self.ext = ext;
 		self
 	}
 

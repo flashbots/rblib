@@ -346,6 +346,7 @@ pub mod traits {
 		reth::{
 			api::FullNodeTypes,
 			evm::ConfigureEvm,
+			node::builder::NodeTypes,
 			providers::{ChainSpecProvider, HeaderProvider, StateProviderFactory},
 			transaction_pool::{PoolTransaction, TransactionPool},
 		},
@@ -410,7 +411,11 @@ pub mod traits {
 
 	pub trait PlatformExecBounds<P: Platform>:
 		Platform<
-			NodeTypes = types::NodeTypes<P>,
+			NodeTypes: NodeTypes<
+				ChainSpec = types::ChainSpec<P>,
+				Primitives = types::Primitives<P>,
+				Payload = types::PayloadTypes<P>,
+			>,
 			EvmConfig = types::EvmConfig<P>,
 			ExtraLimits = types::ExtraLimits<P>,
 		>
@@ -419,7 +424,11 @@ pub mod traits {
 
 	impl<T, P: Platform> PlatformExecBounds<T> for P where
 		T: Platform<
-				NodeTypes = types::NodeTypes<P>,
+				NodeTypes: NodeTypes<
+					ChainSpec = types::ChainSpec<P>,
+					Primitives = types::Primitives<P>,
+					Payload = types::PayloadTypes<P>,
+				>,
 				EvmConfig = types::EvmConfig<P>,
 				ExtraLimits = types::ExtraLimits<P>,
 			>
