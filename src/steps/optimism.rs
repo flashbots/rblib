@@ -70,19 +70,6 @@ where
 				)
 				.into();
 			}
-			// todo: is this necessary?
-			if let Some(max_tx_da) = ctx.limits().ext.max_tx_da
-				&& payload.da_bytes_used() > max_tx_da
-			{
-				return PayloadBuilderError::Other(
-					format!(
-						"A sequencer transaction exceed data availability tx bytes limit: \
-						 {da_bytes_used} > {max_tx_da}",
-					)
-					.into(),
-				)
-				.into();
-			}
 		}
 
 		// if there were sequencer transactions added to the payload, place a
