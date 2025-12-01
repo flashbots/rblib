@@ -18,13 +18,13 @@ use {
 };
 
 mod bundle;
+mod context;
 mod ethereum;
 mod limits;
-mod metadata;
 pub mod types;
 mod utils;
 
-pub use {bundle::*, ethereum::*, limits::*, metadata::*, utils::*};
+pub use {bundle::*, context::*, ethereum::*, limits::*, utils::*};
 
 #[cfg(feature = "optimism")]
 mod optimism;

@@ -5,14 +5,14 @@ impl<P: Platform> OrderPool<P> {
 	pub fn best_orders_for_block<'a>(
 		&'a self,
 		block: &'a BlockContext<P>,
-		metadata: &'a P::CheckpointContext,
+		ctx: &'a P::CheckpointContext,
 	) -> impl Iterator<Item = Order<P>> + 'a {
 		let orders_iter = self.inner.orders.iter().filter_map(|entry| match entry
 			.value()
 		{
 			t @ Order::Transaction(_) => Some(t.clone()),
 			b @ Order::Bundle(bundle) => {
-				bundle.is_eligible(block, metadata).then(|| b.clone())
+				bundle.is_eligible(block, ctx).then(|| b.clone())
 			}
 		});
 

@@ -144,7 +144,7 @@ impl<P: Platform> Checkpoint<P> {
 		matches!(self.inner.mutation, Mutation::Barrier)
 	}
 
-	/// Returns the metadata of this checkpoint.
+	/// Returns the context of this checkpoint.
 	pub fn context(&self) -> &P::CheckpointContext {
 		&self.inner.context
 	}
@@ -372,11 +372,7 @@ struct CheckpointInner<P: Platform> {
 	/// The timestamp when this checkpoint was created.
 	created_at: Instant,
 
-	// /// Optional tag for this checkpoint. Tags are metadata used to mark
-	// /// checkpoints for later reference in history queries and display/debug
-	// /// output.
-	// tag: Option<Box<str>>,
-	/// User-defined metadata for this checkpoint.
+	/// User-defined context for this checkpoint.
 	context: P::CheckpointContext,
 }
 
@@ -521,7 +517,7 @@ impl<P: Platform> Debug for Checkpoint<P> {
 		f.debug_struct("Checkpoint")
 			.field("depth", &self.depth())
 			.field("block", &format!("{} + 1", self.block().parent().hash()))
-			.field("metadata", &self.context())
+			.field("context", &self.context())
 			.field(
 				"txs",
 				&self
@@ -537,7 +533,7 @@ impl<P: Platform> Debug for Checkpoint<P> {
 
 impl<P: Platform> Display for Checkpoint<P> {
 	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-		let metadata_suffix = format!("{:?}", self.context());
+		let ctx_suffix = format!("{:?}", self.context());
 
 		let Mutation::Executable(exec_result) = &self.inner.mutation else {
 			if self.depth() == 0 {
@@ -549,12 +545,7 @@ impl<P: Platform> Display for Checkpoint<P> {
 			// applied to it.
 			return match &self.inner.mutation {
 				Mutation::Barrier => {
-					write!(
-						f,
-						"[{}] barrier, metadata={}",
-						self.depth(),
-						metadata_suffix
-					)
+					write!(f, "[{}] barrier, context={}", self.depth(), ctx_suffix)
 				}
 				Mutation::Executable(_) => {
 					unreachable!("Executable variant handled above")
@@ -581,7 +572,7 @@ impl<P: Platform> Display for Checkpoint<P> {
 				self.depth(),
 				bundle.transactions().len(),
 				self.gas_used(),
-				metadata_suffix
+				ctx_suffix
 			),
 		}
 	}

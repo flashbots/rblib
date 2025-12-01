@@ -36,7 +36,7 @@ pub trait Bundle<P: Platform>:
 	/// Access to the transactions that are part of this bundle.
 	fn transactions(&self) -> &[Recovered<types::Transaction<P>>];
 
-	/// Returns a new bundle with the exact configuration and metadata as this one
+	/// Returns a new bundle with the exact configuration and context as this one
 	/// but without the transaction with the given hash. The returned bundle must
 	/// maintain the same order of transactions as the original bundle.
 	///
@@ -51,7 +51,7 @@ pub trait Bundle<P: Platform>:
 	fn is_eligible(
 		&self,
 		block: &BlockContext<P>,
-		metadata: &P::CheckpointContext,
+		ctx: &P::CheckpointContext,
 	) -> Eligibility;
 
 	/// Optional check that allows the bundle to check if it knows for sure that
@@ -96,8 +96,8 @@ pub trait Bundle<P: Platform>:
 	/// Calculates the hash of the bundle.
 	///
 	/// This hash should be unique for each bundle and take into account the
-	/// metadata attached to it, so two bundles with the same transactions but
-	/// different metadata should have different hashes.
+	/// context attached to it, so two bundles with the same transactions but
+	/// different contexts should have different hashes.
 	fn hash(&self) -> B256;
 
 	/// Returns an iterator that yields the bundle's transactions in a format

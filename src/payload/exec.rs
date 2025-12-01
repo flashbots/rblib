@@ -58,7 +58,7 @@ pub enum Executable<P: Platform> {
 	// Individual transaction
 	Transaction(Recovered<types::Transaction<P>>),
 
-	// A bundle of transactions with metadata and behaviors.
+	// A bundle of transactions with context and behaviors.
 	Bundle(types::Bundle<P>),
 }
 
