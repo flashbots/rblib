@@ -1,14 +1,9 @@
 use {
-	crate::{
-		alloy::consensus::BlockHeader,
-		prelude::*,
-		reth::{
-			api::NodeTypes,
-			chainspec::EthChainSpec,
-			optimism::node::OpDAConfig,
-		},
-	},
+	crate::{alloy, prelude::*, reth},
+	alloy::consensus::BlockHeader,
 	core::time::Duration,
+	reth::{api::NodeTypes, chainspec::EthChainSpec, optimism::node::OpDAConfig},
+	reth_optimism_node::payload::config::OpGasLimitConfig,
 	serde::{Deserialize, Serialize},
 	std::time::{SystemTime, UNIX_EPOCH},
 };
@@ -26,11 +21,12 @@ pub struct OpLimitsExt {
 
 impl Default for OpLimitsExt {
 	fn default() -> Self {
+		let gas_config = OpGasLimitConfig::default();
 		let da_config = OpDAConfig::default();
 		OpLimitsExt {
 			max_tx_da: da_config.max_da_tx_size(),
 			max_block_da: da_config.max_da_block_size(),
-			max_block_da_footprint: None,
+			max_block_da_footprint: gas_config.gas_limit(),
 		}
 	}
 }
