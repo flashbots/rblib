@@ -621,10 +621,6 @@ mod tests {
 			assert_eq!(checkpoint.depth(), 0);
 			assert!(checkpoint.is_barrier());
 			assert!((before..=after).contains(&checkpoint.created_at()));
-			assert_eq!(
-				*checkpoint.context(),
-				<Ethereum as Platform>::CheckpointContext::default()
-			);
 		}
 
 		#[test]

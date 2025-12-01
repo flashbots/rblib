@@ -73,16 +73,14 @@ impl<P: Platform> Executable<P> {
 		self,
 		block: &BlockContext<P>,
 		db: &DB,
-		checkpoint_context: &P::CheckpointContext,
+		ctx: &P::CheckpointContext,
 	) -> Result<ExecutionResult<P>, ExecutionError<P>>
 	where
 		DB: DatabaseRef<Error = ProviderError> + Debug,
 	{
 		match self {
-			Self::Bundle(bundle) => {
-				Self::execute_bundle(bundle, block, db, checkpoint_context)
-			}
-			Self::Transaction(tx) => Self::execute_transaction(tx, block, db)
+			Self::Bundle(bundle) => Self::execute_bundle(bundle, block, db, ctx),
+			Self::Transaction(tx) => Self::execute_transaction(tx, block, db, ctx)
 				.map_err(ExecutionError::InvalidTransaction),
 		}
 	}
@@ -103,6 +101,7 @@ impl<P: Platform> Executable<P> {
 		tx: Recovered<types::Transaction<P>>,
 		block: &BlockContext<P>,
 		db: &DB,
+		_ctx: &P::CheckpointContext,
 	) -> Result<ExecutionResult<P>, types::EvmError<P, ProviderError>>
 	where
 		DB: DatabaseRef<Error = ProviderError> + Debug,
@@ -528,8 +527,12 @@ mod tests {
 		let checkpoint = block.start();
 		let tx = test_tx::<P>(0, 0);
 
-		let result =
-			Executable::execute_transaction(tx.clone(), &block, &checkpoint);
+		let result = Executable::execute_transaction(
+			tx.clone(),
+			&block,
+			&checkpoint,
+			checkpoint.context(),
+		);
 
 		let exec_result = result.unwrap();
 		assert_eq!(exec_result.results().len(), 1);
@@ -548,7 +551,12 @@ mod tests {
 		let checkpoint = block.start();
 		let tx = test_tx::<P>(0, 0);
 
-		let result = Executable::execute_transaction(tx, &block, &checkpoint);
+		let result = Executable::execute_transaction(
+			tx,
+			&block,
+			&checkpoint,
+			checkpoint.context(),
+		);
 
 		let exec_result = result.unwrap();
 		assert!(!exec_result.state().is_empty());
@@ -807,8 +815,13 @@ mod tests {
 		let checkpoint = block.start();
 		let tx = test_tx::<P>(0, 0);
 
-		let result =
-			Executable::execute_transaction(tx, &block, &checkpoint).unwrap();
+		let result = Executable::execute_transaction(
+			tx,
+			&block,
+			&checkpoint,
+			checkpoint.context(),
+		)
+		.unwrap();
 
 		// State should be a BundleState with changes
 		assert!(!result.state().is_empty());
@@ -824,8 +837,13 @@ mod tests {
 		let checkpoint = block.start();
 		let tx = test_tx::<P>(0, 0);
 
-		let result =
-			Executable::execute_transaction(tx, &block, &checkpoint).unwrap();
+		let result = Executable::execute_transaction(
+			tx,
+			&block,
+			&checkpoint,
+			checkpoint.context(),
+		)
+		.unwrap();
 		let cloned = result.clone();
 
 		assert_eq!(result, cloned);
