@@ -8,13 +8,13 @@ use {
 	crate::{
 		alloy::{
 			consensus::Transaction,
-			primitives::{Address, B256},
 			consensus::transaction::Recovered,
+			primitives::{Address, B256},
 		},
 		orderpool2::{AccountNonce, BundleNonce},
 		payload::CheckpointExt,
-		prelude::{Bundle, Checkpoint, ControlFlow, Platform, Step, StepContext},
 		platform::types::Transaction as PlatformTransaction,
+		prelude::{Bundle, Checkpoint, ControlFlow, Platform, Step, StepContext},
 		reth,
 	},
 	parking_lot::Mutex,
@@ -25,6 +25,7 @@ use {
 		sync::Arc,
 	},
 };
+
 use crate::prelude::Optimism;
 
 #[derive(Clone)]
@@ -77,8 +78,7 @@ where
 	}
 }
 
-impl OrderpoolOrder for Recovered<PlatformTransaction<Optimism>>
-{
+impl OrderpoolOrder for Recovered<PlatformTransaction<Optimism>> {
 	type ID = B256;
 
 	fn id(&self) -> Self::ID {
@@ -86,10 +86,10 @@ impl OrderpoolOrder for Recovered<PlatformTransaction<Optimism>>
 	}
 
 	fn nonces(&self) -> Vec<BundleNonce> {
-		vec![BundleNonce{
+		vec![BundleNonce {
 			address: self.signer(),
 			nonce: self.nonce(),
-			optional: false
+			optional: false,
 		}]
 	}
 }
