@@ -182,21 +182,20 @@ where
 	}
 
 	fn blob_fields(&self) -> (Option<u64>, Option<u64>) {
-		match (
-			self.block().is_jovian_active(),
-			self.block().is_ecotone_active(),
-		) {
-			// Jovian
-			(true, _) => {
-				let footprint = self
-					.cumulative_da_footprint()
-					.expect("Jovian but no da footprint");
-				(Some(0), Some(footprint))
-			}
-			// Ecotone
-			(_, true) => (Some(0), Some(0)),
-			// Pre-Ecotone
-			_ => (None, None),
+		// Jovian
+		if self.block().is_jovian_active() {
+			let footprint = self
+				.cumulative_da_footprint()
+				.expect("Jovian but no da footprint");
+			(Some(0), Some(footprint))
+		}
+		// Ecotone
+		else if self.block().is_ecotone_active() {
+			(Some(0), Some(0))
+		}
+		// Pre-Ecotone
+		else {
+			(None, None)
 		}
 	}
 }
