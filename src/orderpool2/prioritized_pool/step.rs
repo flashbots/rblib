@@ -14,7 +14,15 @@ use {
 		orderpool2::{AccountNonce, BundleNonce},
 		payload::CheckpointExt,
 		platform::types::Transaction as PlatformTransaction,
-		prelude::{Bundle, Checkpoint, ControlFlow, Platform, Step, StepContext},
+		prelude::{
+			Bundle,
+			Checkpoint,
+			ControlFlow,
+			Optimism,
+			Platform,
+			Step,
+			StepContext,
+		},
 		reth,
 	},
 	parking_lot::Mutex,
@@ -25,8 +33,6 @@ use {
 		sync::Arc,
 	},
 };
-
-use crate::prelude::Optimism;
 
 #[derive(Clone)]
 pub struct BundleWithNonces<B, P> {
