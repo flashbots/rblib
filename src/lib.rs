@@ -79,6 +79,10 @@ pub mod reth {
 		pub use reth_ethereum::*;
 	}
 
+	pub mod network_peers {
+		pub use reth_network_peers::*;
+	}
+
 	#[cfg(feature = "optimism")]
 	pub mod optimism {
 		pub mod chainspec {
@@ -86,6 +90,9 @@ pub mod reth {
 		}
 		pub mod node {
 			pub use reth_optimism_node::*;
+		}
+		pub mod rpc {
+			pub use reth_optimism_rpc::*;
 		}
 		pub mod forks {
 			pub use reth_optimism_forks::*;
@@ -104,6 +111,10 @@ pub mod alloy {
 
 	pub mod evm {
 		pub use alloy_evm::*;
+	}
+
+	pub mod serde {
+		pub use alloy_serde::*;
 	}
 
 	#[cfg(any(test, feature = "test-utils"))]
