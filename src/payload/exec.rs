@@ -2,6 +2,7 @@ use {
 	crate::{alloy, prelude::*, reth},
 	alloy::{
 		consensus::{crypto::RecoveryError, transaction::TxHashRef},
+		evm::revm::context::result::ExecutionResult as RevmExecutionResult,
 		primitives::{B256, TxHash},
 	},
 	reth::{
@@ -42,7 +43,7 @@ pub enum ExecutionError<P: Platform> {
 	InvalidBundleTransaction(TxHash, types::EvmError<P, ProviderError>),
 
 	#[error("Transaction {0} in the bundle is not allowed to revert.")]
-	BundleTransactionReverted(TxHash),
+	BundleTransactionReverted(TxHash, Option<types::EvmHaltReason<P>>),
 
 	#[error("Invalid bundle post-execution state: {0}")]
 	InvalidBundlePostExecutionState(types::BundlePostExecutionError<P>),
@@ -231,8 +232,15 @@ impl<P: Platform> Executable<P> {
 				}
 				// Non-Optional failing transaction, not allowed to fail: invalidate the
 				// bundle
-				Ok(_) => {
-					return Err(ExecutionError::BundleTransactionReverted(tx_hash));
+				Ok(ExecResultAndState { result, state: _ }) => {
+					let halt_reason = match &result {
+						RevmExecutionResult::Halt { reason, .. } => Some(reason.clone()),
+						_ => None,
+					};
+					return Err(ExecutionError::BundleTransactionReverted(
+						tx_hash,
+						halt_reason,
+					));
 				}
 				// Non-Optional invalid transaction: invalidate the bundle
 				Err(err) => {
