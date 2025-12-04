@@ -154,9 +154,6 @@ pub mod reth {
 		pub mod txpool {
 			pub use reth_optimism_txpool::*;
 		}
-		pub mod rpc {
-			pub use reth_optimism_rpc::*;
-		}
 		pub mod consensus {
 			pub use reth_optimism_consensus::*;
 		}

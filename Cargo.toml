@@ -123,15 +123,14 @@ alloy-origin = { version = "1.0.41", package = "alloy", features = [
     "rpc-types-mev",
 ] }
 alloy-evm = "0.23.0"
-alloy-json-rpc = "1.0.41"
 alloy-serde = "1.0.41"
+alloy-json-rpc = "1.0.41"
 
 # Reth dependencies
 reth-origin = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", package = "reth" }
 reth-evm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-errors = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-cli = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
-reth-db-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-cli-commands = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-rpc-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-rpc-eth-types = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
@@ -156,6 +155,7 @@ reth-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-eth-wire-types = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-network = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-node-types = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-db-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 
 # Revm dependencies
 revm-database = "9.0"
@@ -190,9 +190,6 @@ tikv-jemallocator = { version = "0.6", optional = true }
 
 [dev-dependencies]
 rblib = { path = ".", features = ["test-utils"] }
-
-#[patch.crates-io]
-#alloy-primitives = { git = "https://github.com/alloy-rs/core", rev = "8c5713c20e3ed08cf09634ea5cb696d7021002a8" }
 
 [lints]
 workspace = true
