@@ -65,6 +65,7 @@ jemalloc-prof = [
 
 optimism = [
     "op-alloy",
+    "op-alloy-rpc-types-engine",
     "reth-optimism-node",
     "reth-optimism-chainspec",
     "reth-optimism-forks",
@@ -161,7 +162,8 @@ reth-db-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 revm-database = "9.0"
 
 # Reth-optimism dependencies (optional)
-op-alloy = { version = "0.22.0", features = ["full"], optional = true }
+op-alloy = { version = "0.22.4", features = ["full"], optional = true }
+op-alloy-rpc-types-engine = { version = "0.22.4", default-features = false, optional = true }
 op-alloy-flz = "0.13.1"
 reth-optimism-node = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
 reth-optimism-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }

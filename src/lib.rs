@@ -188,6 +188,10 @@ pub mod alloy {
 	#[cfg(feature = "optimism")]
 	pub mod optimism {
 		pub use op_alloy::*;
+
+		pub mod rpc_types_engine {
+			pub use op_alloy_rpc_types_engine::*;
+		}
 	}
 }
 
