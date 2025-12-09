@@ -9,7 +9,7 @@ mod ext;
 mod span;
 
 pub use {
-	block::{BlockContext, Error as BlockError},
+	block::{BlockContext, Error as BlockError, ProviderFactory},
 	checkpoint::{Checkpoint, Error as CheckpointError},
 	exec::{Executable, ExecutionError, ExecutionResult, IntoExecutable},
 	ext::{

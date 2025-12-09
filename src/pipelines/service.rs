@@ -205,14 +205,14 @@ where
 			})?;
 
 		let hash = header.hash();
-		let base_state = self.service.provider().state_by_block_hash(hash)?;
+		let factory: Arc<Provider> = Arc::new(self.service.provider().clone());
 
 		// This is the beginning of the state manipulation API usage from within
 		// the pipelines API.
 		let block_ctx = BlockContext::new(
 			header,
 			attribs,
-			base_state,
+			factory,
 			self.service.chain_spec().clone(),
 			self.maybe_pre_cached(hash),
 		)
