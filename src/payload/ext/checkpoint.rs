@@ -169,10 +169,7 @@ pub trait CheckpointExt<P: Platform>: super::sealed::Sealed {
 	/// Returns the latest barrier checkpoint in the history of this checkpoint,
 	/// if any.
 	fn latest_barrier(&self) -> Option<Checkpoint<P>> {
-		let history = self.history();
-		let index = history.iter().rposition(Checkpoint::is_barrier)?;
-		let barrier_checkpoint = history.at(index)?.clone();
-		Some(barrier_checkpoint)
+		self.history().iter().rfind(|cp| cp.is_barrier()).cloned()
 	}
 }
 
