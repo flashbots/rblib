@@ -89,7 +89,7 @@ impl Platform for Optimism {
 
 	fn build_payload<P>(
 		payload: Checkpoint<P>,
-		provider_factory: ProviderFactory<P>,
+		provider_factory: types::ProviderFactory<P>,
 	) -> Result<types::BuiltPayload<P>, PayloadBuilderError>
 	where
 		P: traits::PlatformExecCtxBounds<Self>,

@@ -56,7 +56,7 @@ impl Platform for CustomPlatform {
 
 	fn build_payload<P>(
 		payload: Checkpoint<P>,
-		provider_factory: ProviderFactory<P>,
+		provider_factory: types::ProviderFactory<P>,
 	) -> Result<types::BuiltPayload<Self>, PayloadBuilderError>
 	where
 		P: traits::PlatformExecCtxBounds<Self>,

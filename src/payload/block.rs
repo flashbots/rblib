@@ -14,8 +14,6 @@ use {
 	thiserror::Error,
 };
 
-pub type ProviderFactory<P> = Arc<dyn traits::ProviderFactoryBounds<P>>;
-
 #[derive(Debug, Error)]
 pub enum Error<P: Platform> {
 	#[error("Evm configuration error: {0}")]
@@ -73,7 +71,7 @@ impl<P: Platform> BlockContext<P> {
 	pub fn new(
 		parent: SealedHeader<types::Header<P>>,
 		attribs: types::PayloadBuilderAttributes<P>,
-		provider_factory: ProviderFactory<P>,
+		provider_factory: types::ProviderFactory<P>,
 		chainspec: Arc<types::ChainSpec<P>>,
 		cached: Option<ExecutionCache>,
 	) -> Result<Self, Error<P>> {
@@ -145,7 +143,7 @@ impl<P: Platform> BlockContext<P> {
 
 	/// Returns the state provider factory used to create state providers for the
 	/// block being built.
-	pub fn provider_factory(&self) -> ProviderFactory<P> {
+	pub fn provider_factory(&self) -> types::ProviderFactory<P> {
 		self.inner.provider_factory.clone()
 	}
 
@@ -243,7 +241,7 @@ struct BlockContextInner<P: Platform> {
 
 	/// The state provider factory used to create state providers for the block
 	/// being built.
-	provider_factory: ProviderFactory<P>,
+	provider_factory: types::ProviderFactory<P>,
 }
 
 impl<P: Platform> core::fmt::Debug for BlockContext<P> {

@@ -6,7 +6,7 @@
 //! support other platforms as well.
 
 use {
-	crate::{alloy, payload::ProviderFactory, prelude::*, reth},
+	crate::{alloy, prelude::*, reth},
 	alloy::{
 		consensus::{SignableTransaction, Signed},
 		network::Network as AlloyNetwork,
@@ -119,7 +119,7 @@ pub trait Platform:
 	/// client as a response to the `ForkchoiceUpdated` request.
 	fn build_payload<P>(
 		payload: Checkpoint<P>,
-		provider_factory: ProviderFactory<P>,
+		provider_factory: types::ProviderFactory<P>,
 	) -> Result<types::BuiltPayload<P>, PayloadBuilderError>
 	where
 		P: traits::PlatformExecCtxBounds<Self>;
