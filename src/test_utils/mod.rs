@@ -22,8 +22,8 @@ mod platform;
 mod step;
 mod transactions;
 
-pub(crate) use step::fake_step;
 pub use {
+	crate::fake_step,
 	accounts::{FundedAccounts, WithFundedAccounts},
 	ethereum::EthConsensusDriver,
 	exts::*,

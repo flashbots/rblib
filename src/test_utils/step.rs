@@ -16,6 +16,7 @@ use {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StringEvent(pub String);
 
+#[macro_export]
 macro_rules! fake_step {
 	($name:ident) => {
 		#[allow(unreachable_pub)]
@@ -147,8 +148,6 @@ macro_rules! fake_step {
 		}
 	};
 }
-
-pub(crate) use fake_step;
 
 fake_step!(AlwaysOkStep, noop_ok);
 fake_step!(AlwaysBreakStep, noop_break);
