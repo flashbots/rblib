@@ -165,6 +165,12 @@ pub trait CheckpointExt<P: Platform>: super::sealed::Sealed {
 	/// Account nonces changed after transactions execution.
 	/// If transactions changes nonces nonces from N to N+1 this would return N+1.
 	fn changed_nonces(&self) -> Vec<(Address, u64)>;
+
+	/// Returns the latest barrier checkpoint in the history of this checkpoint,
+	/// if any.
+	fn latest_barrier(&self) -> Option<Checkpoint<P>> {
+		self.history().iter().rfind(|cp| cp.is_barrier()).cloned()
+	}
 }
 
 impl<P: Platform> CheckpointExt<P> for Checkpoint<P> {

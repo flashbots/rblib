@@ -270,59 +270,6 @@ impl<P: Platform> Executable<P> {
 			state,
 		})
 	}
-
-	/// Executes this executable as a single unit of state transition and returns
-	/// the outcome of the execution. If the
-	/// executable is invalid, no execution result will be produced.
-	///
-	/// For details on what makes an executable invalid see the
-	/// [`simulate_transaction`] and [`simulate_bundle`] methods.
-	pub fn simulate<DB>(
-		self,
-		block: &BlockContext<P>,
-		db: &DB,
-	) -> Result<ExecutionResult<P>, ExecutionError<P>>
-	where
-		DB: DatabaseRef<Error = ProviderError> + Debug,
-	{
-		match self {
-			Self::Bundle(_) => unreachable!("asd"),
-			Self::Transaction(tx) => Self::simulate_transaction(tx, block, db)
-				.map_err(ExecutionError::InvalidTransaction),
-		}
-	}
-
-	/// Executes a single transaction and returns the outcome of the execution.
-	///
-	/// Notes:
-	/// - Transactions that are invalid and cause EVM failures will not produce an
-	///   execution result.
-	///
-	/// - Transactions that fail gracefully (revert or halt) will produce an
-	///   execution result and state changes. It is up to higher levels of the
-	///   system to decide what to do with such transactions, e.g., whether to
-	///   remove them from the payload or not (see [`RevertProtection`]).
-	fn simulate_transaction<DB>(
-		tx: Recovered<types::Transaction<P>>,
-		block: &BlockContext<P>,
-		db: &DB,
-	) -> Result<ExecutionResult<P>, types::EvmError<P, ProviderError>>
-	where
-		DB: DatabaseRef<Error = ProviderError> + Debug,
-	{
-		let mut state = State::builder().with_database(WrapDatabaseRef(db)).build();
-
-		let result = block
-			.evm_config()
-			.evm_with_env(&mut state, block.evm_env().clone())
-			.transact(&tx)?;
-
-		Ok(ExecutionResult {
-			source: Executable::Transaction(tx),
-			results: vec![result.result],
-			state: BundleState::default(),
-		})
-	}
 }
 
 impl<P: Platform> Executable<P> {
