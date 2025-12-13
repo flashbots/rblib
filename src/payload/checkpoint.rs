@@ -232,7 +232,7 @@ impl<P: Platform> Checkpoint<P> {
 	pub fn build_payload(
 		&self,
 	) -> Result<types::BuiltPayload<P>, PayloadBuilderError> {
-		P::build_payload(self.clone(), self.block().base_state())
+		P::build_payload(self.clone(), self.block().provider_factory())
 	}
 }
 
@@ -751,7 +751,7 @@ mod tests {
 	#[test]
 	fn test_build_payload() {
 		let block = BlockContext::<Ethereum>::mocked();
-		let provider = block.base_state();
+		let provider = block.provider_factory();
 
 		let root = block.start();
 		let txs = test_txs::<Ethereum>(0, 0, 10);

@@ -362,24 +362,35 @@ pub mod traits {
 	{
 	}
 
-	pub trait ProviderBounds<P: Platform>:
+	/// Bounds for the provider factory required to build payloads.
+	pub trait ProviderFactoryBounds<P: Platform>:
 		StateProviderFactory
 		+ ChainSpecProvider<ChainSpec = types::ChainSpec<P>>
-		+ HeaderProvider<Header = types::Header<P>>
-		+ Clone
 		+ Send
 		+ Sync
+	{
+	}
+
+	impl<T, P: Platform> ProviderFactoryBounds<P> for T where
+		T: StateProviderFactory
+			+ ChainSpecProvider<ChainSpec = types::ChainSpec<P>>
+			+ Send
+			+ Sync
+	{
+	}
+
+	pub trait ProviderBounds<P: Platform>:
+		ProviderFactoryBounds<P>
+		+ HeaderProvider<Header = types::Header<P>>
+		+ Clone
 		+ 'static
 	{
 	}
 
 	impl<T, P: Platform> ProviderBounds<P> for T where
-		T: StateProviderFactory
-			+ ChainSpecProvider<ChainSpec = types::ChainSpec<P>>
+		T: ProviderFactoryBounds<P>
 			+ HeaderProvider<Header = types::Header<P>>
 			+ Clone
-			+ Send
-			+ Sync
 			+ 'static
 	{
 	}

@@ -19,7 +19,6 @@ use {
 		},
 		payload::{builder::*, util::PayloadTransactionsFixed},
 		primitives::Recovered,
-		providers::StateProvider,
 		revm::{cancelled::CancelOnDrop, database::StateProviderDatabase},
 	},
 	serde::{Deserialize, Serialize},
@@ -90,7 +89,7 @@ impl Platform for Optimism {
 
 	fn build_payload<P>(
 		payload: Checkpoint<P>,
-		provider: &dyn StateProvider,
+		provider_factory: types::ProviderFactory<P>,
 	) -> Result<types::BuiltPayload<P>, PayloadBuilderError>
 	where
 		P: traits::PlatformExecCtxBounds<Self>,
@@ -122,9 +121,15 @@ impl Platform for Optimism {
 			builder_config: OpBuilderConfig::default(),
 		};
 
+		let state_provider =
+			provider_factory.history_by_block_hash(block.parent().hash())?;
+
 		// Invoke the builder implementation from reth-optimism-node.
-		let build_outcome =
-			op_builder.build(StateProviderDatabase(&provider), &provider, context)?;
+		let build_outcome = op_builder.build(
+			StateProviderDatabase(&state_provider),
+			&state_provider,
+			context,
+		)?;
 
 		// extract the built payload from the build outcome.
 		let built_payload = match build_outcome {

@@ -136,3 +136,6 @@ pub type TxEnvelope<P: PlatformWithRpcTypes> =
 
 pub type UnsignedTx<P: PlatformWithRpcTypes> =
 	<RpcTypes<P> as AlloyNetwork>::UnsignedTx;
+
+/// Used to get state providers during payload building.
+pub type ProviderFactory<P> = Arc<dyn traits::ProviderFactoryBounds<P>>;

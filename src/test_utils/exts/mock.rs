@@ -133,7 +133,7 @@ where
 	fn mocked() -> BlockContext<P> {
 		let chainspec = P::dev_chainspec();
 		let provider_factory = GenesisProviderFactory::<P>::new(chainspec.clone());
-		let base_state = provider_factory.state_provider();
+		let provider_factory = Arc::new(provider_factory);
 
 		let parent = SealedHeader::new(
 			chainspec.genesis_header().clone(),
@@ -148,7 +148,7 @@ where
 		BlockContext::<P>::new(
 			parent,
 			payload_attributes,
-			base_state,
+			provider_factory,
 			chainspec.clone(),
 			None,
 		)

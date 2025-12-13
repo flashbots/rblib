@@ -3,9 +3,10 @@ use {
 		prelude::*,
 		reth::{
 			api::ConfigureEvm,
+			errors::ProviderError,
 			evm::{block::BlockExecutionError, execute::BlockBuilder},
 			primitives::SealedHeader,
-			providers::{StateProvider, StateProviderBox},
+			providers::{StateProvider, StateProviderBox, StateProviderFactory},
 			revm::{State, database::StateProviderDatabase},
 		},
 	},
@@ -20,6 +21,9 @@ pub enum Error<P: Platform> {
 
 	#[error("Block execution error: {0}")]
 	BlockExecution(#[from] BlockExecutionError),
+
+	#[error("Provider error: {0}")]
+	Provider(#[from] ProviderError),
 }
 
 /// This type represents the beginning of the payload building process. It
@@ -67,7 +71,7 @@ impl<P: Platform> BlockContext<P> {
 	pub fn new(
 		parent: SealedHeader<types::Header<P>>,
 		attribs: types::PayloadBuilderAttributes<P>,
-		base_state: StateProviderBox,
+		provider_factory: types::ProviderFactory<P>,
 		chainspec: Arc<types::ChainSpec<P>>,
 		cached: Option<ExecutionCache>,
 	) -> Result<Self, Error<P>> {
@@ -83,11 +87,15 @@ impl<P: Platform> BlockContext<P> {
 			.next_evm_env(&parent, &block_env)
 			.map_err(Error::EvmEnv)?;
 
+		let state_provider = provider_factory
+			.state_by_block_hash(parent.hash())
+			.map_err(Error::Provider)?;
+
 		let execution_cached = cached.unwrap_or_default();
-		let provider =
-			CachedStateProvider::new_with_caches(base_state, execution_cached);
+		let state_provider =
+			CachedStateProvider::new_with_caches(state_provider, execution_cached);
 		let mut base_state = State::builder()
-			.with_database(StateProviderDatabase(provider))
+			.with_database(StateProviderDatabase::new(state_provider))
 			.with_bundle_update()
 			.build();
 
@@ -106,6 +114,7 @@ impl<P: Platform> BlockContext<P> {
 				base_state,
 				evm_config,
 				chainspec,
+				provider_factory,
 			}),
 		})
 	}
@@ -130,6 +139,12 @@ impl<P: Platform> BlockContext<P> {
 	/// is being built.
 	pub fn base_state(&self) -> &dyn StateProvider {
 		self.inner.base_state.database.as_ref()
+	}
+
+	/// Returns the state provider factory used to create state providers for the
+	/// block being built.
+	pub fn provider_factory(&self) -> types::ProviderFactory<P> {
+		self.inner.provider_factory.clone()
 	}
 
 	/// Returns the EVM configuration used to create EVM instances for executing
@@ -223,6 +238,10 @@ struct BlockContextInner<P: Platform> {
 	/// are used to configure the EVM environment and the next block environment
 	/// for the block that is being built.
 	chainspec: Arc<types::ChainSpec<P>>,
+
+	/// The state provider factory used to create state providers for the block
+	/// being built.
+	provider_factory: types::ProviderFactory<P>,
 }
 
 impl<P: Platform> core::fmt::Debug for BlockContext<P> {

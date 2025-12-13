@@ -19,7 +19,6 @@ use {
 		ethereum::primitives::SignedTransaction,
 		optimism::primitives::OpTransactionSigned,
 		primitives::Recovered,
-		providers::StateProvider,
 		revm::db::BundleState,
 	},
 	serde::{Deserialize, Serialize},
@@ -57,12 +56,12 @@ impl Platform for CustomPlatform {
 
 	fn build_payload<P>(
 		payload: Checkpoint<P>,
-		provider: &dyn StateProvider,
+		provider_factory: types::ProviderFactory<P>,
 	) -> Result<types::BuiltPayload<Self>, PayloadBuilderError>
 	where
 		P: traits::PlatformExecCtxBounds<Self>,
 	{
-		Optimism::build_payload::<P>(payload, provider)
+		Optimism::build_payload::<P>(payload, provider_factory)
 	}
 }
 

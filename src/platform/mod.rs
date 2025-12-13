@@ -12,7 +12,7 @@ use {
 		network::Network as AlloyNetwork,
 		signers::Signature,
 	},
-	reth::{ethereum::primitives::SignedTransaction, providers::StateProvider},
+	reth::ethereum::primitives::SignedTransaction,
 	serde::{Serialize, de::DeserializeOwned},
 	std::sync::Arc,
 };
@@ -119,7 +119,7 @@ pub trait Platform:
 	/// client as a response to the `ForkchoiceUpdated` request.
 	fn build_payload<P>(
 		payload: Checkpoint<P>,
-		provider: &dyn StateProvider,
+		provider_factory: types::ProviderFactory<P>,
 	) -> Result<types::BuiltPayload<P>, PayloadBuilderError>
 	where
 		P: traits::PlatformExecCtxBounds<Self>;
