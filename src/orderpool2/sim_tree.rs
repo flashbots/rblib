@@ -28,7 +28,7 @@ pub struct SimulatedResult<Order, SimResult> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct PendingOrder<Order> {
+pub struct PendingOrder<Order> {
 	order: Order,
 	unsatisfied_nonces: usize,
 }
@@ -48,15 +48,15 @@ pub trait SimTreeResult: Clone {
 #[derive(Debug)]
 pub struct SimTree<NonceSource, Order: OrderpoolOrder, Result> {
 	// fields for nonce management
-	nonces: NonceSource,
+	pub nonces: NonceSource,
 
-	sims: HashMap<SimulationId, SimulatedResult<Order, Result>>,
-	sims_that_update_one_nonce: HashMap<AccountNonce, SimulationId>,
+	pub sims: HashMap<SimulationId, SimulatedResult<Order, Result>>,
+	pub sims_that_update_one_nonce: HashMap<AccountNonce, SimulationId>,
 
-	pending_orders: HashMap<Order::ID, PendingOrder<Order>>,
-	pending_nonces: HashMap<AccountNonce, Vec<Order::ID>>,
+	pub pending_orders: HashMap<Order::ID, PendingOrder<Order>>,
+	pub pending_nonces: HashMap<AccountNonce, Vec<Order::ID>>,
 
-	ready_orders: Vec<SimulationRequest<Order>>,
+	pub ready_orders: Vec<SimulationRequest<Order>>,
 }
 
 impl<NonceSource, Order, SimResult> SimTree<NonceSource, Order, SimResult>
