@@ -639,7 +639,7 @@ impl<P: Platform> RethTransactionPoolTrait for NativeTransactionPool<P> {
 	/// hashes.
 	///
 	/// This adheres to the expected behavior of
-	/// [`GetPooledTransactions`](https://github.com/ethereum/devp2p/blob/master/caps/eth.md#getpooledtransactions-0x09):
+	/// [`GetPooledTransactions`]
 	///
 	/// The transactions must be in same order as in the request, but it is OK to
 	/// skip transactions
@@ -648,6 +648,10 @@ impl<P: Platform> RethTransactionPoolTrait for NativeTransactionPool<P> {
 	/// If the transaction is a blob transaction, the sidecar will be included.
 	///
 	/// Consumer: P2P
+	///
+	///
+	/// [`PooledTransactionVariant`]: crate::reth::ethereum::PooledTransactionVariant
+	/// [`GetPooledTransactions`]: https://github.com/ethereum/devp2p/blob/master/caps/eth.md#getpooledtransactions-0x09
 	fn get_pooled_transaction_elements(
 		&self,
 		tx_hashes: Vec<TxHash>,

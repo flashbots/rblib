@@ -37,11 +37,15 @@ impl Name {
 	/// Initializes the metric name for this step.
 	///
 	/// Metric names are initialized by
-	/// [`service::PipelineServiceBuilder`] through a call to `.into_service()`
+	/// [`PipelineServiceBuilder`] through a call to `.into_service()`
 	/// during reth node setup.
 	///
 	/// # Panics
-	/// This function will panic if the metric name has already been initialized.
+	///
+	/// This function will panic if the metric name has already been
+	/// initialized.
+	///
+	/// [`PipelineServiceBuilder`]: crate::pipelines::service::PipelineServiceBuilder
 	pub(super) fn init_metrics(&self, name: impl Into<String>) {
 		self
 			.metrics

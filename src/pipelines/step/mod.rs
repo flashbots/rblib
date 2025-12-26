@@ -165,6 +165,8 @@ pub struct InitContext<P: Platform> {
 
 impl<P: Platform> InitContext<P> {
 	/// Private API, called from [`PipelineServiceBuilder`].
+	///
+	/// [`PipelineServiceBuilder`]: crate::pipelines::service::PipelineServiceBuilder
 	pub(crate) fn new(
 		provider: Arc<dyn StateProviderFactory>,
 		metrics_scope: String,

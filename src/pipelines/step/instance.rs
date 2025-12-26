@@ -280,8 +280,11 @@ impl<P: Platform> StepInstance<P> {
 	/// Initializes metrics recording for this step.
 	///
 	/// The input string is the metric name assigned to this step. This name is
-	/// not known before the pipeline instance is fully built and converted into a
-	/// service using [`PipelineServiceBuilder`]. It should be called only once.
+	/// not known before the pipeline instance is fully built and converted
+	/// into a service using [`PipelineServiceBuilder`]. It should be called
+	/// only once.
+	///
+	/// [`PipelineServiceBuilder`]: crate::pipelines::service::PipelineServiceBuilder
 	pub(crate) fn init_metrics(&self, name: &str) {
 		// Initialize the metrics name for this step.
 		self.name.init_metrics(name);

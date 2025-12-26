@@ -9,6 +9,7 @@
 //!
 //! Before running the pipeline, the payload will have the platform-specific
 //! [`BlockBuilder::apply_pre_execution_changes`] applied to its state.
+//!
 //! [`BlockBuilder::apply_pre_execution_changes`]: crate::reth::evm::execute::BlockBuilder::apply_pre_execution_changes
 
 use {

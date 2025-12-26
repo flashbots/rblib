@@ -106,7 +106,7 @@ jobs:
         run: cargo test --all-targets --all-features
 
   doc:
-    name: Tests
+    name: Docs
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v5
