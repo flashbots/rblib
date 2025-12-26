@@ -649,7 +649,6 @@ impl<P: Platform> RethTransactionPoolTrait for NativeTransactionPool<P> {
 	///
 	/// Consumer: P2P
 	///
-	///
 	/// [`PooledTransactionVariant`]: crate::reth::ethereum::PooledTransactionVariant
 	/// [`GetPooledTransactions`]: https://github.com/ethereum/devp2p/blob/master/caps/eth.md#getpooledtransactions-0x09
 	fn get_pooled_transaction_elements(
