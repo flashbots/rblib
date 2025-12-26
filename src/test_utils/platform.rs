@@ -36,6 +36,8 @@ use {
 /// variants of all internal unit tests for all platforms. You can use
 /// [`rblib_test`] with externally defined platforms as long as they implement
 /// this trait.
+///
+/// [`rblib_test`]: rblib_tests_macros::rblib_test
 pub trait TestNodeFactory<P: PlatformWithRpcTypes> {
 	type ConsensusDriver: ConsensusDriver<P>;
 	type CliExtArgs: Default + Send + Sync;

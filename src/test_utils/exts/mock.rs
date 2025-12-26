@@ -49,9 +49,11 @@ impl PlatformWithTestnet for Optimism {
 /// that implement [`PayloadJobGenerator`] and are configured as payload
 /// builders.
 ///
-/// See [`crate::pipelines::service::PipelineServiceBuilder`] for an example of
-/// a workflow that creates a payload builder attributes instance in real world
-/// settings.
+/// See the `PipelineServiceBuilder` in `crate::pipelines::service` for an
+/// example of a workflow that creates a payload builder attributes instance in
+/// real world settings.
+///
+/// [`PayloadJobGenerator`]: crate::reth::payload::builder::PayloadJobGenerator
 pub trait PayloadBuilderAttributesMocked<P: Platform> {
 	fn mocked(parent: &SealedHeader<types::Header<P>>) -> Self;
 }

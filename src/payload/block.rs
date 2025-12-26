@@ -66,8 +66,7 @@ impl<P: Platform> BlockContext<P> {
 	///    [`StateProviderFactory::state_by_block_hash`]
 	///  - The chainspec of the chain we're building for.
 	///
-	/// [`PayloadJobGenerator::new_payload_job`]: reth_payload_builder::PayloadJobGenerator::new_payload_job
-	/// [`StateProviderFactory::state_by_block_hash`]: reth::providers::StateProviderFactory::state_by_block_hash
+	/// [`PayloadJobGenerator::new_payload_job`]: crate::reth::payload::builder::PayloadJobGenerator::new_payload_job
 	pub fn new(
 		parent: SealedHeader<types::Header<P>>,
 		attribs: types::PayloadBuilderAttributes<P>,

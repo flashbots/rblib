@@ -43,8 +43,11 @@ impl<P: Platform> StepContext<P> {
 	/// Access to the state of the chain at the beginning of block that we are
 	/// building. This state does not include any changes made by the pipeline
 	/// during the payload building process. It does however include changes
-	/// applied by platform-specific [`BlockBuilder::apply_pre_execution_changes`]
+	/// applied by platform-specific
+	/// [`BlockBuilder::apply_pre_execution_changes`]
 	/// for this block.
+	///
+	/// [`BlockBuilder::apply_pre_execution_changes`]: crate::reth::evm::execute::BlockBuilder::apply_pre_execution_changes
 	pub fn provider(&self) -> &dyn StateProvider {
 		self.block.base_state()
 	}

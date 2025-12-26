@@ -14,14 +14,20 @@ use {
 pub trait BlockOpExt<P: Platform> {
 	/// Returns `true` if [`Ecotone`] hard fork is active at the given block
 	/// timestamp.
+	///
+	/// [`Ecotone`]: crate::reth::optimism::forks::OpHardfork::Ecotone
 	fn is_ecotone_active(&self) -> bool;
 
 	/// Returns `true` if [`Holocene`] hard fork is active at the given block
 	/// timestamp.
+	///
+	/// [`Holocene`]: crate::reth::optimism::forks::OpHardfork::Holocene
 	fn is_holocene_active(&self) -> bool;
 
 	/// Returns `true` if [`Jovian`] hard fork is active at the given block
 	/// timestamp.
+	///
+	/// [`Jovian`]: crate::reth::optimism::forks::OpHardfork::Jovian
 	fn is_jovian_active(&self) -> bool;
 }
 

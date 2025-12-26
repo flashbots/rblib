@@ -50,8 +50,8 @@ impl<S> CachedStateProvider<S>
 where
 	S: StateProvider,
 {
-	/// Creates a new [`CachedStateProvider`] from an [`ExecutionCache`], state
-	/// provider, and [`CachedStateMetrics`].
+	/// Creates a new [`CachedStateProvider`] from an [`ExecutionCache`],
+	/// and [`StateProvider`].
 	pub const fn new_with_caches(
 		state_provider: S,
 		caches: ExecutionCache,

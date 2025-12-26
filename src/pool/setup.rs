@@ -57,8 +57,12 @@ impl<P: Platform> OrderPool<P> {
 /// functionalities.
 ///
 /// Attaching the order pool to the host node is optional, but greatly enhances
-/// the functionality of the order pool. See more in the [`HostNode`]
-/// documentation.
+/// the functionality of the order pool. Specifically it allows:
+/// - checking for permanent ineligibility of bundles at the RPC level and
+///   rejecting them before they are sent to the order pool.
+/// - simulation of bundles against the state of the chain at the RPC level.
+/// - garbage collection of orders that have transactions that were included in
+///   a committed block.
 ///
 /// In future iterations, we're expecting to have our own implementation of the
 /// system transaction pool.

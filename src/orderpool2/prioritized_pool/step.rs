@@ -8,21 +8,11 @@ use {
 	crate::{
 		alloy::{
 			consensus::Transaction,
-			consensus::transaction::Recovered,
 			primitives::{Address, B256},
 		},
 		orderpool2::{AccountNonce, BundleNonce},
 		payload::CheckpointExt,
-		platform::types::Transaction as PlatformTransaction,
-		prelude::{
-			Bundle,
-			Checkpoint,
-			ControlFlow,
-			Optimism,
-			Platform,
-			Step,
-			StepContext,
-		},
+		prelude::{Bundle, Checkpoint, ControlFlow, Platform, Step, StepContext},
 		reth,
 	},
 	parking_lot::Mutex,
@@ -32,6 +22,13 @@ use {
 		marker::{PhantomData, Send, Sync},
 		sync::Arc,
 	},
+};
+
+#[cfg(feature = "optimism")]
+use crate::{
+	alloy::consensus::transaction::Recovered,
+	platform::types::Transaction as PlatformTransaction,
+	prelude::Optimism,
 };
 
 #[derive(Clone)]
@@ -84,6 +81,7 @@ where
 	}
 }
 
+#[cfg(feature = "optimism")]
 impl OrderpoolOrder for Recovered<PlatformTransaction<Optimism>> {
 	type ID = B256;
 
