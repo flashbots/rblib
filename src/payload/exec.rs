@@ -69,7 +69,7 @@ impl<P: Platform> Executable<P> {
 	/// executable is invalid, no execution result will be produced.
 	///
 	/// For details on what makes an executable invalid see the
-	/// [`execute_transaction`] and [`execute_bundle`] methods.
+	/// [`Self::execute_transaction`] and [`Self::execute_bundle`] methods.
 	pub fn execute<DB>(
 		self,
 		block: &BlockContext<P>,
@@ -97,8 +97,11 @@ impl<P: Platform> Executable<P> {
 	/// - Transactions that fail gracefully (revert or halt) will produce an
 	///   execution result and state changes. It is up to higher levels of the
 	///   system to decide what to do with such transactions, e.g., whether to
-	///   remove them from the payload or not (see [`RevertProtection`]).
-	fn execute_transaction<DB>(
+	///   remove them from the payload or not (see
+	///   [`RemoveRevertedTransactions`]).
+	///
+	/// [`RemoveRevertedTransactions`]: crate::steps::RemoveRevertedTransactions
+	pub fn execute_transaction<DB>(
 		tx: Recovered<types::Transaction<P>>,
 		block: &BlockContext<P>,
 		db: &DB,
@@ -165,7 +168,8 @@ impl<P: Platform> Executable<P> {
 	///       gas used, nonces incremented, etc. Cleaning up transactions that are
 	///       allowed to fail and are optional from a bundle is beyond the scope
 	///       of this method. This is implemented by higher levels of the system,
-	///       such as the [`RevertProtection`] step in the pipelines API.
+	///       such as the [`RemoveRevertedTransactions`] step in the pipelines
+	///       API.
 	///     - If the bundle does not allow this failed transaction to fail, but
 	///       the transaction is optional, then it will be removed from the
 	///       bundle. The bundle stays valid.
@@ -184,7 +188,9 @@ impl<P: Platform> Executable<P> {
 	///   the execution has a certain balance in some account, etc. If this check
 	///   fails, the bundle will be considered invalid, and no execution result
 	///   will be produced.
-	fn execute_bundle<DB>(
+	///
+	/// [`RemoveRevertedTransactions`]: crate::steps::RemoveRevertedTransactions
+	pub fn execute_bundle<DB>(
 		bundle: types::Bundle<P>,
 		block: &BlockContext<P>,
 		db: &DB,

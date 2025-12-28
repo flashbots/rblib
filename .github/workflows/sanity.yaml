@@ -51,6 +51,28 @@ jobs:
       - name: Run Clippy with stable
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+  clippy-no-default:
+    name: Clippy (no default features)
+    runs-on: warp-ubuntu-latest-x64-32x
+    steps:
+      - uses: actions/checkout@v5
+      - name: Cache Rust toolchain
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-rust-stable-${{ hashFiles('**/Cargo.lock') }}
+      - name: Set up Rust Stable
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: clippy
+      - name: Run Clippy with stable
+        run: cargo clippy --all-targets --no-default-features -- -D warnings
+
   typos:
     name: Typos
     runs-on: warp-ubuntu-latest-x64-32x
@@ -82,3 +104,26 @@ jobs:
           override: true
       - name: Run tests with stable
         run: cargo test --all-targets --all-features
+
+  doc:
+    name: Docs
+    runs-on: warp-ubuntu-latest-x64-32x
+    steps:
+      - uses: actions/checkout@v5
+      - name: Cache Rust toolchain
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-rust-stable-${{ hashFiles('**/Cargo.lock') }}
+      - name: Set up Rust Stable
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Build documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps --document-private-items --all-features --examples

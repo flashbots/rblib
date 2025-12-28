@@ -4,7 +4,7 @@
 //!
 //! Take this pipeline as an example:
 //!
-//! ```
+//! ```text
 //! Pipeline::default()────────────────────────┐
 //!   .with_prologue(PrologueStep)             │
 //!   .with_step(Step1_1)                      │

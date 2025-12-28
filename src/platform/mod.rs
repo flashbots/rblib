@@ -60,8 +60,13 @@ pub trait Platform:
 	/// consensus engine such as transactions, blocks, headers, etc.
 	///
 	/// Two well known implementations of this trait are:
-	/// - [`EthereumNode`] for Ethereum L1 mainnet,
-	/// - [`OpNode`] for Optimism chains.
+	/// - [`EthereumNode`](crate::reth::ethereum::node::EthereumNode) for Ethereum
+	///   L1 mainnet,
+	#[cfg_attr(
+		feature = "optimism",
+		doc = " - [`OpNode`](crate::reth::optimism::node::OpNode) for Optimism \
+		       chains."
+	)]
 	type NodeTypes: reth::api::NodeTypes;
 
 	/// A type that provides a complete EVM configuration ready to be used
@@ -133,6 +138,8 @@ pub trait Platform:
 /// In Pipelines some steps require platforms to implement this trait if they
 /// produce new transactions as part of their logic and want to remain
 /// platform-agnostic, such as [`BuilderEpilogue`].
+///
+/// [`BuilderEpilogue`]: crate::steps::BuilderEpilogue
 pub trait PlatformWithRpcTypes: Platform {
 	type RpcTypes: AlloyNetwork<
 			Header = types::Header<Self>,

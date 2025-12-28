@@ -9,9 +9,13 @@
 //! - [`Ethereum`]
 //! - [`Optimism`]
 //!
-//! If you want to make your own [`crate::Platform`] type implementation
+//! If you want to make your own [`Platform`] type implementation
 //! available for testing with those utils you need to implement the
 //! [`TestablePlatform`] trait for it.
+//!
+//! [`Platform`]: crate::prelude::Platform
+//! [`Ethereum`]: crate::prelude::Ethereum
+//! [`Optimism`]: crate::prelude::Optimism
 
 mod accounts;
 mod ethereum;
