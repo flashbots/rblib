@@ -127,7 +127,7 @@ pub trait Platform:
 		provider_factory: types::ProviderFactory<P>,
 	) -> Result<types::BuiltPayload<P>, PayloadBuilderError>
 	where
-		P: traits::PlatformExecCtxBounds<Self>;
+		P: traits::PlatformExecBounds<Self>;
 }
 
 /// This is an optional extension trait for platforms that want to provide info

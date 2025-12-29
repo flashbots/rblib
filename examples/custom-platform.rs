@@ -59,7 +59,7 @@ impl Platform for CustomPlatform {
 		provider_factory: types::ProviderFactory<P>,
 	) -> Result<types::BuiltPayload<Self>, PayloadBuilderError>
 	where
-		P: traits::PlatformExecCtxBounds<Self>,
+		P: traits::PlatformExecBounds<Self>,
 	{
 		Optimism::build_payload::<P>(payload, provider_factory)
 	}
