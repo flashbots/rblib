@@ -1,0 +1,91 @@
+[package]
+name = "rblib-pipeline"
+description = "Pipeline orchestration and steps for rblib."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+authors.workspace = true
+exclude.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+doctest = false
+
+[features]
+default = ["rblib-core/default", "optimism", "jemalloc"]
+optimism = ["rblib-core/optimism"]
+jemalloc = ["rblib-core/jemalloc", "reth-optimism-cli?/jemalloc"]
+jemalloc-prof = ["rblib-core/jemalloc-prof"]
+long-pipelines-syntax = []
+
+test-utils = [
+    "rblib-core/test-utils",
+    "dep:nanoid",
+    "tokio/full",
+    "reth-optimism-rpc/client",
+    "dep:rblib-tests-macros",
+    "dep:jsonrpsee-core",
+    "dep:tracing-subscriber",
+    "dep:ctor",
+    "dep:reth-ipc"
+]
+
+[target.'cfg(unix)'.dependencies]
+tikv-jemallocator = { workspace = true, optional = true }
+
+[dependencies]
+rblib-core = { path = "../core", default-features = true }
+pipelines-macros = { path = "../pipeline-macros" }
+rblib-tests-macros = { path = "../test-utils-macros", optional = true }
+
+# Common
+eyre.workspace = true
+derive_more.workspace = true
+smallvec.workspace = true
+dashmap.workspace = true
+uuid.workspace = true
+futures.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+serde.workspace = true
+jsonrpsee.workspace = true
+parking_lot.workspace = true
+priority-queue.workspace = true
+rand.workspace = true
+tracing.workspace = true
+metrics.workspace = true
+
+# Reth
+reth-evm.workspace = true
+reth-errors.workspace = true
+reth-rpc-api.workspace = true
+reth-transaction-pool.workspace = true
+reth-payload-builder.workspace = true
+
+# Optimism (optional)
+reth-optimism-node = { workspace = true, optional = true }
+reth-optimism-rpc = { workspace = true, optional = true }
+reth-optimism-cli = { workspace = true, optional = true }
+
+# test utils
+jsonrpsee-core = { workspace = true, optional = true }
+nanoid = { workspace = true, optional = true }
+alloy-genesis = { workspace = true, optional = true }
+ctor = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true, features = [
+    "env-filter",
+    "json",
+] }
+
+# Optional reth extras
+reth-ipc = { workspace = true, optional = true }
+reth-ethereum = { workspace = true, optional = true }
+reth-node-builder = { workspace = true, optional = true }
+
+[dev-dependencies]
+rblib-pipeline = { path = ".", features = ["test-utils"] }
