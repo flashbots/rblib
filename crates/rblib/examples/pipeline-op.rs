@@ -1,16 +1,14 @@
 //! Example of creating a basic block builder for OP stack chains
 
-use {
-	rblib::{
-		pool::{AppendOrders, HostNodeInstaller, OrderPool},
-		prelude::*,
-		steps::{OptimismPrologue, OrderByPriorityFee},
-	},
-	rblib_core::reth::optimism::{
+use rblib::{
+	pool::{AppendOrders, HostNodeInstaller, OrderPool},
+	prelude::*,
+	reth::optimism::{
 		cli::Cli,
 		node::{OpAddOns, OpEngineApiBuilder, OpEngineValidatorBuilder, OpNode},
 		rpc::OpEthApiBuilder,
 	},
+	steps::{OptimismPrologue, OrderByPriorityFee},
 };
 
 /// Basic block builder

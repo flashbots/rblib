@@ -25,7 +25,6 @@ optimism = ["rblib-pipeline/optimism"]
 test-utils = ["rblib-pipeline/test-utils"]
 
 [dependencies]
-rblib-core = { path = "../core" }
 rblib-pipeline = { path = "../pipeline" }
 
 [dev-dependencies]
