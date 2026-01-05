@@ -39,7 +39,7 @@ test-utils = [
 tikv-jemallocator = { workspace = true, optional = true }
 
 [dependencies]
-rblib-core = { path = "../core", default-features = true }
+rblib-core = { path = "../core", default-features = false }
 pipelines-macros = { path = "../pipeline-macros" }
 rblib-tests-macros = { path = "../test-utils-macros", optional = true }
 

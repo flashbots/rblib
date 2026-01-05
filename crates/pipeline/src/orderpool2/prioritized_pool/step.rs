@@ -8,6 +8,7 @@ use {
 	crate::{
 		alloy::{
 			consensus::Transaction,
+			consensus::transaction::TxHashRef,
 			primitives::{Address, B256},
 		},
 		orderpool2::{AccountNonce, BundleNonce},
@@ -25,7 +26,7 @@ use {
 
 #[cfg(feature = "optimism")]
 use crate::{
-	alloy::consensus::transaction::{Recovered, TxHashRef},
+	alloy::consensus::transaction::Recovered,
 	platform::types::Transaction as PlatformTransaction,
 	prelude::Optimism,
 };

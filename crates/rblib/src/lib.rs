@@ -12,13 +12,13 @@ pub mod steps {
 }
 
 pub mod reth {
-	pub use rblib_core::reth::*;
+	pub use rblib_pipeline::reth::*;
 }
 pub mod revm {
-	pub use rblib_core::revm::*;
+	pub use rblib_pipeline::revm::*;
 }
 pub mod alloy {
-	pub use rblib_core::alloy::*;
+	pub use rblib_pipeline::alloy::*;
 }
 
 #[cfg(any(test, feature = "test-utils"))]
