@@ -5,19 +5,18 @@ pub mod platform;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
-// RBLib Core Public API Prelude
-pub mod prelude {
-	pub use {
-		super::{payload::*, platform::*},
-		metrics::{Counter, Gauge, Histogram},
-	};
-
-	pub(crate) use super::Variant;
-}
-
 #[doc(hidden)]
 pub mod metrics_util {
 	pub use metrics::*;
+}
+
+pub mod prelude {
+	pub(crate) use super::Variant;
+	pub use super::{
+		metrics_util::{Counter, Gauge, Histogram},
+		payload::*,
+		platform::*,
+	};
 }
 
 // Reexport reth version used by rblib as a convenience for downstream

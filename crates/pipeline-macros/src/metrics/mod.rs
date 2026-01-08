@@ -10,7 +10,7 @@ fn rblib_path() -> proc_macro2::TokenStream {
 
 	match crate_name("rblib-pipeline") {
 		Ok(FoundCrate::Itself) => {
-			// We are inside the rblib-pipeline crate itself.
+			// We are inside rblib-pipeline crate itself.
 			quote!(crate)
 		}
 		Ok(FoundCrate::Name(name)) => {
@@ -20,9 +20,9 @@ fn rblib_path() -> proc_macro2::TokenStream {
 			quote!(::#ident)
 		}
 		Err(_) => {
-			// Fallback: assume the crate is available as `::rblib`.
+			// Fallback: assume the crate is available as `::pipeline`.
 			// Emit a helpful error if that also fails at type-check time.
-			quote!(::rblib)
+			quote!(::rblib::pipeline)
 		}
 	}
 }

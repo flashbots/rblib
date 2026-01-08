@@ -3,7 +3,6 @@ use {
 	alloy::consensus::BlockHeader,
 	core::{panic::Location, time::Duration},
 	metrics::{Counter, Gauge, Histogram},
-	pipelines_macros::MetricsSet,
 	reth::node::builder::{BuiltPayload, PayloadBuilderAttributes},
 	std::time::{SystemTime, UNIX_EPOCH},
 };

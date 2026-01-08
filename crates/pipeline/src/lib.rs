@@ -1,14 +1,19 @@
 // Pipelines, steps, pools, and other orchestration utilities for rblib.
 pub use rblib_core::{
+	self as core,
 	Variant,
 	alloy,
-	metrics_util,
 	payload,
 	platform,
 	reth,
 	revm,
 	uuid,
 };
+
+#[doc(hidden)]
+pub mod metrics_util {
+	pub use rblib_core::metrics_util::*;
+}
 
 pub mod orderpool2;
 pub mod pipelines;

@@ -1,3 +1,5 @@
+pub use rblib_pipeline::{self as pipeline, core};
+
 pub mod prelude {
 	// rblib_pipeline already include rblib core
 	pub use rblib_pipeline::prelude::*;
