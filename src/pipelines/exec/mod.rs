@@ -280,69 +280,63 @@ where
 
 		// The executor has not run any steps yet, it is invoking the `before_job`
 		// method of each step in the pipeline.
-		if let Cursor::Initializing(ref mut future) = executor.cursor {
-			if let Poll::Ready(output) = future.as_mut().poll_unpin(cx) {
-				match output {
-					Ok(checkpoint) => {
-						trace!("{} initialized successfully", executor.pipeline);
-						executor.cursor = executor.first_step(checkpoint);
-					}
-					Err(error) => {
-						trace!(
-							"{} initialization failed with error: {error:?}",
-							executor.pipeline
-						);
-						// If the initialization failed, we immediately finalize the
-						// pipeline with the error that occurred during initialization
-						// and not attempt to run any steps.
-						executor.cursor =
-							Cursor::Finalizing(executor.finalize(Err(error.into())));
-					}
+		if let Cursor::Initializing(ref mut future) = executor.cursor
+			&& let Poll::Ready(output) = future.as_mut().poll_unpin(cx)
+		{
+			match output {
+				Ok(checkpoint) => {
+					trace!("{} initialized successfully", executor.pipeline);
+					executor.cursor = executor.first_step(checkpoint);
 				}
-				trace!("{} initializing completed", executor.pipeline);
+				Err(error) => {
+					trace!(
+						"{} initialization failed with error: {error:?}",
+						executor.pipeline
+					);
+					// If the initialization failed, we immediately finalize the
+					// pipeline with the error that occurred during initialization
+					// and not attempt to run any steps.
+					executor.cursor =
+						Cursor::Finalizing(executor.finalize(Err(error.into())));
+				}
 			}
-
-			// tell the async runtime to poll again because we are still initializing
-			cx.waker().wake_by_ref();
+			trace!("{} initializing completed", executor.pipeline);
 		}
 
 		// the pipeline has completed executing all steps or encountered and error.
 		// Now we are running the `after_job` of each step in the pipeline.
-		if let Cursor::Finalizing(ref mut future) = executor.cursor {
-			if let Poll::Ready(output) = future.as_mut().poll_unpin(cx) {
-				trace!("{} completed with output: {output:#?}", executor.pipeline);
+		if let Cursor::Finalizing(ref mut future) = executor.cursor
+			&& let Poll::Ready(output) = future.as_mut().poll_unpin(cx)
+		{
+			trace!("{} completed with output: {output:#?}", executor.pipeline);
 
-				// Execution of this pipeline has completed, This resolves the
-				// executor future with the final output of the pipeline. Also
-				// emit an appropriate system event and record metrics.
+			// Execution of this pipeline has completed, This resolves the
+			// executor future with the final output of the pipeline. Also
+			// emit an appropriate system event and record metrics.
 
-				let payload_id = executor.block.payload_id();
-				let events_bus = &executor.pipeline.events;
-				let metrics = executor.service.metrics();
+			let payload_id = executor.block.payload_id();
+			let events_bus = &executor.pipeline.events;
+			let metrics = executor.service.metrics();
 
-				match &output {
-					Ok(built_payload) => {
-						events_bus.publish(PayloadJobCompleted::<P> {
-							payload_id,
-							built_payload: built_payload.clone(),
-						});
-						metrics.jobs_completed.increment(1);
-						metrics.record_payload::<P>(built_payload, &executor.block);
-					}
-					Err(error) => {
-						events_bus.publish(PayloadJobFailed {
-							payload_id,
-							error: error.clone(),
-						});
-						metrics.jobs_failed.increment(1);
-					}
+			match &output {
+				Ok(built_payload) => {
+					events_bus.publish(PayloadJobCompleted::<P> {
+						payload_id,
+						built_payload: built_payload.clone(),
+					});
+					metrics.jobs_completed.increment(1);
+					metrics.record_payload::<P>(built_payload, &executor.block);
 				}
-
-				return Poll::Ready(output);
+				Err(error) => {
+					events_bus.publish(PayloadJobFailed {
+						payload_id,
+						error: error.clone(),
+					});
+					metrics.jobs_failed.increment(1);
+				}
 			}
 
-			// tell the async runtime to poll again because we are still finalizing
-			cx.waker().wake_by_ref();
+			return Poll::Ready(output);
 		}
 
 		if matches!(executor.cursor, Cursor::BeforeStep(_, _)) {
@@ -359,23 +353,25 @@ where
 			trace!("{} will execute step {path}", executor.pipeline);
 			let future = executor.execute_step(&path, input);
 			executor.cursor = Cursor::StepInProgress(path, future);
-			cx.waker().wake_by_ref(); // tell the async runtime to poll again
+
+			// This wake is necessary because we have a new future/at a state
+			// transition boundary and directly return Poll::Pending without polling
+			// it first, so there is no registered waker to drive progress without it
+			cx.waker().wake_by_ref();
 		}
 
-		if let Cursor::StepInProgress(ref path, ref mut future) = executor.cursor {
-			// If the cursor is in the StepInProgress state, we to poll the
-			// future instance of that step to see if it has completed.
-			if let Poll::Ready(output) = future.as_mut().poll_unpin(cx) {
-				trace!(
-					"{} step {path:?} completed with output: {output:#?}",
-					executor.pipeline
-				);
+		// If the cursor is in the StepInProgress state, we to poll the
+		// future instance of that step to see if it has completed.
+		if let Cursor::StepInProgress(ref path, ref mut future) = executor.cursor
+			&& let Poll::Ready(output) = future.as_mut().poll_unpin(cx)
+		{
+			trace!(
+				"{} step {path:?} completed with output: {output:#?}",
+				executor.pipeline
+			);
 
-				// step has completed, we can advance the cursor
-				executor.cursor = executor.advance_cursor(path, output);
-			}
-
-			cx.waker().wake_by_ref(); // tell the async runtime to poll again
+			// step has completed, we can advance the cursor
+			executor.cursor = executor.advance_cursor(path, output);
 		}
 
 		Poll::Pending
