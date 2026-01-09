@@ -113,3 +113,16 @@ alloy-genesis = { workspace = true, optional = true }
 
 [dev-dependencies]
 rblib-core = { path = ".", features = ["test-utils"] }
+criterion = { workspace = true }
+
+[[bench]]
+name = "checkpoint_apply"
+harness = false
+
+[[bench]]
+name = "checkpoint_traversal"
+harness = false
+
+[[bench]]
+name = "checkpoint_forking"
+harness = false

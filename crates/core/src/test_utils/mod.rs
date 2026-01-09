@@ -32,6 +32,7 @@ pub use {
 		test_tx,
 		test_txs,
 		transfer_tx,
+		transfer_tx_to,
 	},
 };
 

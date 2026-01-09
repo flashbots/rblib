@@ -49,14 +49,15 @@ pub fn test_bundle<P: PlatformWithRpcTypes<Bundle = FlashbotsBundle<P>>>(
 }
 
 #[allow(clippy::missing_panics_doc)]
-pub fn transfer_tx<P: PlatformWithRpcTypes>(
+pub fn transfer_tx_to<P: PlatformWithRpcTypes>(
 	signer: &PrivateKeySigner,
 	nonce: u64,
 	value: U256,
+	address: Address,
 ) -> Recovered<types::Transaction<P>> {
 	let mut tx = types::TransactionRequest::<P>::default()
 		.with_nonce(nonce)
-		.with_to(Address::random())
+		.with_to(address)
 		.with_value(value)
 		.with_gas_price(1_000_000_000)
 		.with_gas_limit(21_000)
@@ -72,6 +73,15 @@ pub fn transfer_tx<P: PlatformWithRpcTypes>(
 	let signed_tx: types::TxEnvelope<P> = tx.into_signed(sig).into();
 	let signed_tx: types::Transaction<P> = signed_tx.into();
 	signed_tx.with_signer(signer.address())
+}
+
+#[allow(clippy::missing_panics_doc)]
+pub fn transfer_tx<P: PlatformWithRpcTypes>(
+	signer: &PrivateKeySigner,
+	nonce: u64,
+	value: U256,
+) -> Recovered<types::Transaction<P>> {
+	transfer_tx_to::<P>(signer, nonce, value, Address::random())
 }
 
 /// Create a transaction that will revert when executed
