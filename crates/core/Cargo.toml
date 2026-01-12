@@ -114,15 +114,39 @@ alloy-genesis = { workspace = true, optional = true }
 [dev-dependencies]
 rblib-core = { path = ".", features = ["test-utils"] }
 criterion = { workspace = true }
+gungraun = { workspace = true }
 
 [[bench]]
-name = "checkpoint_apply"
+name = "apply_criterion"
+path = "benches/revm_regression/apply_criterion.rs"
 harness = false
 
 [[bench]]
-name = "checkpoint_traversal"
+name = "apply_valgrind"
+path = "benches/revm_regression/apply_valgrind.rs"
 harness = false
 
 [[bench]]
-name = "checkpoint_forking"
+name = "revert_criterion"
+path = "benches/revm_regression/revert_criterion.rs"
+harness = false
+
+[[bench]]
+name = "revert_valgrind"
+path = "benches/revm_regression/revert_valgrind.rs"
+harness = false
+
+[[bench]]
+name = "traversal_criterion"
+path = "benches/revm_regression/traversal_criterion.rs"
+harness = false
+
+[[bench]]
+name = "traversal_valgrind"
+path = "benches/revm_regression/traversal_valgrind.rs"
+harness = false
+
+[[bench]]
+name = "forking"
+path = "benches/revm_regression/forking.rs"
 harness = false

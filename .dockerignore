@@ -1,0 +1,22 @@
+# Build artifacts
+target/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Documentation
+*.md
+!crates/*/Cargo.toml
+
+# CI/CD
+.github/
+
+# Miscellaneous
+.DS_Store
