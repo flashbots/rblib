@@ -51,7 +51,7 @@ use {
 	core::{cell::RefCell, time::Duration},
 	metrics::{Counter, Histogram},
 	parking_lot::RwLock,
-	std::collections::HashMap,
+	std::{collections::HashMap, time::Instant},
 };
 
 /// Keeps track of the currently active pipeline execution scope relative to the
