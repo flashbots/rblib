@@ -109,6 +109,8 @@ reth-optimism-cli = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3
 reth-optimism-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 
 # test-utils
+criterion = { version = "0.8", features = ["html_reports"] }
+gungraun = "0.17.0"
 jsonrpsee-core = { version = "0.26.0", features = ["client"] }
 nanoid = "0.4"
 alloy-genesis = { version = "1.0", default-features = false }

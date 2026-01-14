@@ -19,7 +19,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-rust-nightly-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-rust-nightly-fmt-${{ hashFiles('**/Cargo.lock') }}
       - name: Set up Rust Nightly
         uses: actions-rs/toolchain@v1
         with:
@@ -41,7 +41,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-rust-stable-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-rust-stable-clippy-all-${{ hashFiles('**/Cargo.lock') }}
       - name: Set up Rust Stable
         uses: actions-rs/toolchain@v1
         with:
@@ -49,7 +49,7 @@ jobs:
           override: true
           components: clippy
       - name: Run Clippy with stable
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   clippy-no-default:
     name: Clippy (no default features)
@@ -63,7 +63,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-rust-stable-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-rust-stable-clippy-nodefault-${{ hashFiles('**/Cargo.lock') }}
       - name: Set up Rust Stable
         uses: actions-rs/toolchain@v1
         with:
@@ -71,7 +71,7 @@ jobs:
           override: true
           components: clippy
       - name: Run Clippy with stable
-        run: cargo clippy --all-targets --no-default-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 
   typos:
     name: Typos
@@ -96,14 +96,14 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-rust-stable-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-rust-stable-test-${{ hashFiles('**/Cargo.lock') }}
       - name: Set up Rust Stable
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           override: true
       - name: Run tests with stable
-        run: cargo test --all-targets --all-features
+        run: cargo test --workspace --lib --bins --tests --examples --all-features
 
   doc:
     name: Docs
@@ -117,7 +117,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-rust-stable-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-rust-stable-doc-${{ hashFiles('**/Cargo.lock') }}
       - name: Set up Rust Stable
         uses: actions-rs/toolchain@v1
         with:
@@ -126,4 +126,4 @@ jobs:
       - name: Build documentation
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps --document-private-items --all-features --examples
+        run: cargo doc --workspace --no-deps --document-private-items --all-features --examples
