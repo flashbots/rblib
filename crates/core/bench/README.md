@@ -31,7 +31,7 @@ scenario definitions including workloads, approaches compared, and what each ben
 ./crates/core/bench/macos.sh
 ```
 
-Docker buid:
+Docker build:
 
 ```bash
 docker build -f crates/core/bench/Dockerfile -t rblib-core-bench .
