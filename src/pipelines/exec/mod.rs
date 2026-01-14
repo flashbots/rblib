@@ -149,7 +149,37 @@ impl<P: Platform> PipelineExecutor<P> {
 			checkpoint = next_checkpoint;
 
 			match next_navigator {
-				Some(next) => navigator = next,
+				Some(next) => {
+					navigator = next;
+					// Cooperative yielding: The `run_steps()` loop can execute multiple
+					// pipeline steps in a tight sequence without yielding back to
+					// the tokio scheduler, especially when steps complete quickly
+					// (synchronously). This can cause executor starvation where other
+					// tasks are delayed.
+					//
+					// The `yield_now().await` here provides a yield point to prevent
+					// starvation. This yield point is not at a fixed location - it
+					// could be placed at several alternative points in the execution
+					// loop. For example:
+					//   - After step execution completes
+					//   - Before executing the next step
+					//   - At the end of each loop iteration
+					//
+					// The critical requirement is that SOME yield point exists in the
+					// loop to allow the tokio scheduler to run other tasks. The
+					// exact placement is a trade-off that hasn't been fully explored:
+					//   - Here: Minimal overhead (one yield per step), but may yield
+					//     unnecessarily
+					//   - Before step: Never misses a yield, but always adds overhead
+					//   - Conditional (e.g., "if step completed synchronously"): Optimal,
+					//     but requires additional bookkeeping/changes to the step API
+					//
+					// If executor starvation persists, consider:
+					//   1. Adding yield points to `initialize()` and `finalize()` loops
+					//      (which lack await points between iterations)
+					//   2. Moving yield point to different location in this loop
+					tokio::task::yield_now().await;
+				}
 				None => return checkpoint.build_payload().map_err(Arc::new),
 			}
 		}
