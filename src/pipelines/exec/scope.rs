@@ -48,8 +48,8 @@
 
 use {
 	super::*,
+	::metrics::{Counter, Histogram},
 	core::{cell::RefCell, time::Duration},
-	metrics::{Counter, Histogram},
 	parking_lot::RwLock,
 	std::{collections::HashMap, time::Instant},
 };

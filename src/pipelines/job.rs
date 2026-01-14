@@ -1,11 +1,8 @@
 use {
-	super::traits,
+	super::metrics,
 	crate::{
 		alloy,
-		pipelines::{
-			exec::{PipelineExecutor, PipelineFuture},
-			service::ServiceContext,
-		},
+		pipelines::exec::{PipelineExecutor, PipelineFuture},
 		prelude::*,
 		reth,
 	},
@@ -13,6 +10,7 @@ use {
 	core::{
 		pin::Pin,
 		task::{Context, Poll},
+		time::Duration,
 	},
 	futures::{FutureExt, future::Shared},
 	reth::{
@@ -38,26 +36,18 @@ use {
 ///
 /// This job will automatically terminate after a deadline even `resolve_kind`
 /// is not called.
-pub(super) struct PayloadJob<P, Provider>
-where
-	P: Platform,
-	Provider: traits::ProviderBounds<P>,
-{
+pub(super) struct PayloadJob<P: Platform> {
 	block: BlockContext<P>,
 	fut: ExecutorFuture<P>,
 	deadline: Pin<Box<Sleep>>,
-	_provider: std::marker::PhantomData<fn() -> Provider>,
 }
 
-impl<P, Provider> PayloadJob<P, Provider>
-where
-	P: Platform,
-	Provider: traits::ProviderBounds<P>,
-{
+impl<P: Platform> PayloadJob<P> {
 	pub(super) fn new(
 		pipeline: &Arc<Pipeline<P>>,
 		block: BlockContext<P>,
-		service: &Arc<ServiceContext<P, Provider>>,
+		metrics: Arc<metrics::Payload>,
+		deadline: Duration,
 	) -> Self {
 		debug!(
 			"New Payload Job {} with block context: {block:#?}",
@@ -67,30 +57,18 @@ where
 		let fut = ExecutorFuture::new(PipelineExecutor::run(
 			Arc::clone(pipeline),
 			block.clone(),
-			Arc::clone(service),
+			metrics,
 		));
-
-		// Job should complete within deadline (12s) even if GetPayload is never
-		// called. This prevents job accumulation.
-		// TODO: when FCU update avalanche is fixed we could replace
-		// builder.deadline with payload.attributes.timeout
-		let deadline =
-			Box::pin(tokio::time::sleep(service.node_config().builder.deadline));
 
 		Self {
 			block,
 			fut,
-			deadline,
-			_provider: std::marker::PhantomData::<fn() -> Provider>,
+			deadline: Box::pin(tokio::time::sleep(deadline)),
 		}
 	}
 }
 
-impl<P, Provider> RethPayloadJobTrait for PayloadJob<P, Provider>
-where
-	P: Platform,
-	Provider: traits::ProviderBounds<P>,
-{
+impl<P: Platform> RethPayloadJobTrait for PayloadJob<P> {
 	type BuiltPayload = types::BuiltPayload<P>;
 	type PayloadAttributes = types::PayloadBuilderAttributes<P>;
 	type ResolvePayloadFuture = ExecutorFuture<P>;
@@ -132,11 +110,7 @@ where
 /// This future is polled for the first time by the Reth runtime when the
 /// `PayloadJob` is created. Here we want to immediately start executing
 /// the pipeline instead of waiting for the `resolve_kind` to be called.
-impl<P, Provider> Future for PayloadJob<P, Provider>
-where
-	P: Platform,
-	Provider: traits::ProviderBounds<P>,
-{
+impl<P: Platform> Future for PayloadJob<P> {
 	type Output = Result<(), PayloadBuilderError>;
 
 	fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {

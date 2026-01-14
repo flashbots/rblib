@@ -13,7 +13,7 @@
 //! [`BlockBuilder::apply_pre_execution_changes`]: crate::reth::evm::execute::BlockBuilder::apply_pre_execution_changes
 
 use {
-	super::{StepInstance, service::ServiceContext},
+	super::{StepInstance, metrics},
 	crate::{prelude::*, reth},
 	core::pin::Pin,
 	futures::FutureExt,
@@ -46,19 +46,17 @@ where
 }
 
 impl<P: Platform> PipelineExecutor<P> {
-	pub(super) fn run<Provider: traits::ProviderBounds<P>>(
+	pub(super) fn run(
 		pipeline: Arc<Pipeline<P>>,
 		block: BlockContext<P>,
-		service: Arc<ServiceContext<P, Provider>>,
+		metrics: Arc<metrics::Payload>,
 	) -> Self {
 		pipeline.events.publish(PayloadJobStarted(block.clone()));
-		service.metrics().jobs_started.increment(1);
-		service
-			.metrics()
-			.record_payload_job_attributes::<P>(block.attributes());
+		metrics.jobs_started.increment(1);
+		metrics.record_payload_job_attributes::<P>(block.attributes());
 
 		let payload_id = block.payload_id();
-		let future = Self::execute(pipeline, block, service).boxed();
+		let future = Self::execute(pipeline, block, metrics).boxed();
 
 		Self { payload_id, future }
 	}
@@ -71,10 +69,10 @@ impl<P: Platform> PipelineExecutor<P> {
 		self.future
 	}
 
-	async fn execute<Provider: traits::ProviderBounds<P>>(
+	async fn execute(
 		pipeline: Arc<Pipeline<P>>,
 		block: BlockContext<P>,
-		service: Arc<ServiceContext<P, Provider>>,
+		metrics: Arc<metrics::Payload>,
 	) -> PipelineOutput<P> {
 		let checkpoint = block.start();
 		let scope = Arc::new(RootScope::new(&pipeline, &checkpoint));
@@ -89,7 +87,7 @@ impl<P: Platform> PipelineExecutor<P> {
 			Err(e) => Err(Arc::new(e)),
 		};
 
-		Self::finalize(&pipeline, &block, &service, &scope, output).await
+		Self::finalize(&pipeline, &block, &metrics, &scope, output).await
 	}
 
 	async fn initialize(
@@ -185,10 +183,10 @@ impl<P: Platform> PipelineExecutor<P> {
 		}
 	}
 
-	async fn finalize<Provider: traits::ProviderBounds<P>>(
+	async fn finalize(
 		pipeline: &Arc<Pipeline<P>>,
 		block: &BlockContext<P>,
-		service: &Arc<ServiceContext<P, Provider>>,
+		metrics: &Arc<metrics::Payload>,
 		scope: &Arc<RootScope<P>>,
 		output: PipelineOutput<P>,
 	) -> PipelineOutput<P> {
@@ -199,9 +197,10 @@ impl<P: Platform> PipelineExecutor<P> {
 				.navigator(pipeline)
 				.expect("Invalid step path in pipeline executor");
 			let limits = scope.limits_of(&step).expect("invalid step path");
-			let ctx = StepContext::new(block, &navi, limits, None);
+			let step_ctx = StepContext::new(block, &navi, limits, None);
 
-			if let Err(e) = navi.instance().after_job(ctx, output.clone()).await {
+			if let Err(e) = navi.instance().after_job(step_ctx, output.clone()).await
+			{
 				trace!("{pipeline} finalization failed with error: {e:?}");
 				return Err(Arc::new(e));
 			}
@@ -219,7 +218,6 @@ impl<P: Platform> PipelineExecutor<P> {
 
 		let payload_id = block.payload_id();
 		let events_bus = &pipeline.events;
-		let metrics = service.metrics();
 
 		match &result {
 			Ok(built_payload) => {
