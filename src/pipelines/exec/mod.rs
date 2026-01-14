@@ -278,108 +278,128 @@ where
 	fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
 		let executor = self.get_mut();
 
-		// The executor has not run any steps yet, it is invoking the `before_job`
-		// method of each step in the pipeline.
-		if let Cursor::Initializing(ref mut future) = executor.cursor
-			&& let Poll::Ready(output) = future.as_mut().poll_unpin(cx)
-		{
-			match output {
-				Ok(checkpoint) => {
-					trace!("{} initialized successfully", executor.pipeline);
-					executor.cursor = executor.first_step(checkpoint);
+		loop {
+			match executor.cursor {
+				// The executor has not run any steps yet, it is invoking the
+				// `before_job` method of each step in the pipeline.
+				Cursor::Initializing(ref mut future) => {
+					match future.as_mut().poll_unpin(cx) {
+						Poll::Ready(Ok(checkpoint)) => {
+							trace!("{} initialized successfully", executor.pipeline);
+							executor.cursor = executor.first_step(checkpoint);
+						}
+						Poll::Ready(Err(error)) => {
+							trace!(
+								"{} initialization failed with error: {error:?}",
+								executor.pipeline
+							);
+							// If the initialization failed, we immediately finalize the
+							// pipeline with the error that occurred during initialization
+							// and not attempt to run any steps.
+							executor.cursor =
+								Cursor::Finalizing(executor.finalize(Err(error.into())));
+						}
+						Poll::Pending => return Poll::Pending,
+					}
 				}
-				Err(error) => {
-					trace!(
-						"{} initialization failed with error: {error:?}",
-						executor.pipeline
-					);
-					// If the initialization failed, we immediately finalize the
-					// pipeline with the error that occurred during initialization
-					// and not attempt to run any steps.
-					executor.cursor =
-						Cursor::Finalizing(executor.finalize(Err(error.into())));
+				// The pipeline has completed executing all steps or encountered an
+				// error. Now we are running the `after_job` of each step.
+				Cursor::Finalizing(ref mut future) => match future
+					.as_mut()
+					.poll_unpin(cx)
+				{
+					Poll::Ready(output) => {
+						trace!("{} completed with output: {output:#?}", executor.pipeline);
+
+						// Execution of this pipeline has completed, This resolves the
+						// executor future with the final output of the pipeline. Also
+						// emit an appropriate system event and record metrics.
+
+						let payload_id = executor.block.payload_id();
+						let events_bus = &executor.pipeline.events;
+						let metrics = executor.service.metrics();
+
+						// Record metrics for the payload job
+						match &output {
+							Ok(built_payload) => {
+								events_bus.publish(PayloadJobCompleted::<P> {
+									payload_id,
+									built_payload: built_payload.clone(),
+								});
+								metrics.jobs_completed.increment(1);
+								metrics.record_payload::<P>(built_payload, &executor.block);
+							}
+							Err(error) => {
+								events_bus.publish(PayloadJobFailed {
+									payload_id,
+									error: error.clone(),
+								});
+								metrics.jobs_failed.increment(1);
+							}
+						}
+
+						return Poll::Ready(output);
+					}
+					Poll::Pending => return Poll::Pending,
+				},
+				// If the cursor is in the BeforeStep state, we need to run the next
+				// step of the pipeline. Steps are async futures, so we need to store
+				// their instance while they are running and being polled until
+				// resolved.
+				Cursor::BeforeStep(_, _) => {
+					let Cursor::BeforeStep(path, input) =
+						std::mem::replace(&mut executor.cursor, Cursor::PreparingStep)
+					else {
+						unreachable!("bug in PipelineExecutor state machine");
+					};
+
+					trace!("{} will execute step {path}", executor.pipeline);
+					let future = executor.execute_step(&path, input);
+					executor.cursor = Cursor::StepInProgress(path, future);
+				}
+				// If the cursor is in the StepInProgress state, poll the future
+				// instance of that step to see if it has completed.
+				Cursor::StepInProgress(ref path, ref mut future) => {
+					match future.as_mut().poll_unpin(cx) {
+						Poll::Ready(output) => {
+							trace!(
+								"{} step {path:?} completed with output: {output:#?}",
+								executor.pipeline
+							);
+
+							// step has completed, we can advance the cursor
+							executor.cursor = executor.advance_cursor(path, output);
+						}
+						Poll::Pending => return Poll::Pending,
+					}
+				}
+				// Transient state that should never be observed here
+				Cursor::PreparingStep => {
+					unreachable!("bug in PipelineExecutor state machine")
 				}
 			}
-			trace!("{} initializing completed", executor.pipeline);
 		}
-
-		// the pipeline has completed executing all steps or encountered and error.
-		// Now we are running the `after_job` of each step in the pipeline.
-		if let Cursor::Finalizing(ref mut future) = executor.cursor
-			&& let Poll::Ready(output) = future.as_mut().poll_unpin(cx)
-		{
-			trace!("{} completed with output: {output:#?}", executor.pipeline);
-
-			// Execution of this pipeline has completed, This resolves the
-			// executor future with the final output of the pipeline. Also
-			// emit an appropriate system event and record metrics.
-
-			let payload_id = executor.block.payload_id();
-			let events_bus = &executor.pipeline.events;
-			let metrics = executor.service.metrics();
-
-			match &output {
-				Ok(built_payload) => {
-					events_bus.publish(PayloadJobCompleted::<P> {
-						payload_id,
-						built_payload: built_payload.clone(),
-					});
-					metrics.jobs_completed.increment(1);
-					metrics.record_payload::<P>(built_payload, &executor.block);
-				}
-				Err(error) => {
-					events_bus.publish(PayloadJobFailed {
-						payload_id,
-						error: error.clone(),
-					});
-					metrics.jobs_failed.increment(1);
-				}
-			}
-
-			return Poll::Ready(output);
-		}
-
-		if matches!(executor.cursor, Cursor::BeforeStep(_, _)) {
-			// If the cursor is in the BeforeStep state, we need to run the next
-			// step of the pipeline. Steps are async futures, so we need to store
-			// their instance while they are running and being polled until resolved.
-
-			let Cursor::BeforeStep(path, input) =
-				std::mem::replace(&mut executor.cursor, Cursor::PreparingStep)
-			else {
-				unreachable!("bug in PipelineExecutor state machine");
-			};
-
-			trace!("{} will execute step {path}", executor.pipeline);
-			let future = executor.execute_step(&path, input);
-			executor.cursor = Cursor::StepInProgress(path, future);
-
-			// This wake is necessary because we have a new future/at a state
-			// transition boundary and directly return Poll::Pending without polling
-			// it first, so there is no registered waker to drive progress without it
-			cx.waker().wake_by_ref();
-		}
-
-		// If the cursor is in the StepInProgress state, we to poll the
-		// future instance of that step to see if it has completed.
-		if let Cursor::StepInProgress(ref path, ref mut future) = executor.cursor
-			&& let Poll::Ready(output) = future.as_mut().poll_unpin(cx)
-		{
-			trace!(
-				"{} step {path:?} completed with output: {output:#?}",
-				executor.pipeline
-			);
-
-			// step has completed, we can advance the cursor
-			executor.cursor = executor.advance_cursor(path, output);
-		}
-
-		Poll::Pending
 	}
 }
 
 /// Keeps track of the current pipeline execution progress.
 enum Cursor<P: Platform> {
+	/// The pipeline is currently initializing all steps for a new payload job.
+	///
+	/// This happens once before any step is executed, and it calls the
+	/// `before_job` method of each step in the pipeline.
+	Initializing(
+		Pin<
+			Box<
+				dyn Future<Output = Result<Checkpoint<P>, PayloadBuilderError>> + Send,
+			>,
+		>,
+	),
+
+	/// This state occurs after the `Completed` state is reached. It calls
+	/// the `after_job` method of each step in the pipeline with the output.
+	Finalizing(Pin<Box<dyn Future<Output = PipelineOutput<P>> + Send>>),
+
 	/// The pipeline will execute this step on the next iteration.
 	BeforeStep(StepPath, Checkpoint<P>),
 
@@ -396,22 +416,6 @@ enum Cursor<P: Platform> {
 		StepPath,
 		Pin<Box<dyn Future<Output = ControlFlow<P>> + Send>>,
 	),
-
-	/// The pipeline is currently initializing all steps for a new payload job.
-	///
-	/// This happens once before any step is executed, and it calls the
-	/// `before_job` method of each step in the pipeline.
-	Initializing(
-		Pin<
-			Box<
-				dyn Future<Output = Result<Checkpoint<P>, PayloadBuilderError>> + Send,
-			>,
-		>,
-	),
-
-	/// This state occurs after the `Completed` state is reached. It calls
-	/// the `after_job` method of each step in the pipeline with the output.
-	Finalizing(Pin<Box<dyn Future<Output = PipelineOutput<P>> + Send>>),
 
 	/// The pipeline is currently preparing to execute the next step.
 	/// We are in this state only for a brief moment inside the `poll` method, and
