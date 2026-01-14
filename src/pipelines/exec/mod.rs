@@ -176,7 +176,7 @@ impl<P: Platform> PipelineExecutor<P> {
 					//   1. Adding yield points to `initialize()` and `finalize()` loops
 					//      (which lack await points between iterations)
 					//   2. Moving yield point to different location in this loop
-					tokio::task::yield_now().await;
+					tokio::task::consume_budget().await;
 				}
 				None => return checkpoint.build_payload().map_err(Arc::new),
 			}
