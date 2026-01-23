@@ -43,7 +43,7 @@ impl<P: Platform> BestTransactions for FixedTransactions<P> {
 
 	fn set_skip_blobs(&mut self, _: bool) {}
 
-	fn mark_invalid(&mut self, tx: &Self::Item, _: InvalidPoolTransactionError) {
+	fn mark_invalid(&mut self, tx: &Self::Item, _: &InvalidPoolTransactionError) {
 		match self.invalid.entry(tx.transaction_id.sender) {
 			Entry::Vacant(e) => {
 				e.insert(tx.transaction_id);

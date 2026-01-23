@@ -1,7 +1,7 @@
 use {
 	super::*,
 	crate::{
-		alloy::consensus::BlockHeader,
+		alloy::{consensus::BlockHeader, primitives::Bytes},
 		reth::{
 			ethereum::{evm::EthEvmConfig, node::EthereumNode},
 			evm::NextBlockEnvAttributes,
@@ -56,6 +56,7 @@ impl Platform for Ethereum {
 			gas_limit: EthereumBuilderConfig::new().gas_limit(parent.gas_limit()),
 			parent_beacon_block_root: attributes.parent_beacon_block_root,
 			withdrawals: Some(attributes.withdrawals.clone()),
+			extra_data: Bytes::default(),
 		})
 	}
 

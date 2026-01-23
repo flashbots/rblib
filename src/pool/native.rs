@@ -84,12 +84,6 @@ struct TransactionPoolVTable<P: Platform> {
 	) -> Pin<
 		Box<dyn Future<Output = Vec<PoolResult<AddedTransactionOutcome>>> + Send>,
 	>,
-	add_transactions_with_origins: fn(
-		*const u8,
-		Vec<(TransactionOrigin, P::PooledTransaction)>,
-	) -> Pin<
-		Box<dyn Future<Output = Vec<PoolResult<AddedTransactionOutcome>>> + Send>,
-	>,
 	transaction_event_listener:
 		fn(*const u8, TxHash) -> Option<TransactionEvents>,
 	all_transactions_event_listener:
@@ -248,6 +242,11 @@ struct TransactionPoolVTable<P: Platform> {
 			*const u8,
 			&[B256],
 		) -> Result<Option<Vec<BlobAndProofV2>>, BlobStoreError>,
+	get_blobs_for_versioned_hashes_v3:
+		fn(
+			*const u8,
+			&[B256],
+		) -> Result<Vec<Option<BlobAndProofV2>>, BlobStoreError>,
 	pending_and_queued_txn_count: fn(*const u8) -> (usize, usize),
 }
 
@@ -288,10 +287,6 @@ impl<P: Platform> TransactionPoolVTable<P> {
 			add_transactions: |self_ptr: *const u8, origin, txs| {
 				let pool = unsafe { &*self_ptr.cast::<Pool>() };
 				pool.add_transactions(origin, txs).boxed()
-			},
-			add_transactions_with_origins: |self_ptr: *const u8, txs| {
-				let pool = unsafe { &*self_ptr.cast::<Pool>() };
-				pool.add_transactions_with_origins(txs).boxed()
 			},
 			transaction_event_listener: |self_ptr: *const u8, tx_hash| {
 				let pool = unsafe { &*self_ptr.cast::<Pool>() };
@@ -454,6 +449,11 @@ impl<P: Platform> TransactionPoolVTable<P> {
 					let pool = unsafe { &*self_ptr.cast::<Pool>() };
 					pool.get_blobs_for_versioned_hashes_v2(versioned_hashes)
 				},
+			get_blobs_for_versioned_hashes_v3:
+				|self_ptr: *const u8, versioned_hashes| {
+					let pool = unsafe { &*self_ptr.cast::<Pool>() };
+					pool.get_blobs_for_versioned_hashes_v3(versioned_hashes)
+				},
 			pending_and_queued_txn_count: |self_ptr: *const u8| {
 				let pool = unsafe { &*self_ptr.cast::<Pool>() };
 				pool.pending_and_queued_txn_count()
@@ -529,21 +529,6 @@ impl<P: Platform> RethTransactionPoolTrait for NativeTransactionPool<P> {
 		transactions: Vec<Self::Transaction>,
 	) -> impl Future<Output = Vec<PoolResult<AddedTransactionOutcome>>> + Send {
 		(self.vtable.add_transactions)(self.vtable.self_ptr, origin, transactions)
-	}
-
-	/// Adds multiple _unvalidated_ transactions with individual origins.
-	///
-	/// Each transaction can have its own [`TransactionOrigin`].
-	///
-	/// Consumer: RPC
-	fn add_transactions_with_origins(
-		&self,
-		transactions: Vec<(TransactionOrigin, Self::Transaction)>,
-	) -> impl Future<Output = Vec<PoolResult<AddedTransactionOutcome>>> + Send {
-		(self.vtable.add_transactions_with_origins)(
-			self.vtable.self_ptr,
-			transactions,
-		)
 	}
 
 	/// Returns a new transaction change event stream for the given transaction.
@@ -1028,6 +1013,16 @@ impl<P: Platform> RethTransactionPoolTrait for NativeTransactionPool<P> {
 		versioned_hashes: &[B256],
 	) -> Result<Option<Vec<BlobAndProofV2>>, BlobStoreError> {
 		(self.vtable.get_blobs_for_versioned_hashes_v2)(
+			self.vtable.self_ptr,
+			versioned_hashes,
+		)
+	}
+
+	fn get_blobs_for_versioned_hashes_v3(
+		&self,
+		versioned_hashes: &[B256],
+	) -> Result<Vec<Option<BlobAndProofV2>>, BlobStoreError> {
+		(self.vtable.get_blobs_for_versioned_hashes_v3)(
 			self.vtable.self_ptr,
 			versioned_hashes,
 		)

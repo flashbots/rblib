@@ -46,6 +46,8 @@ pub struct CachedStateProvider<S> {
 	caches: ExecutionCache,
 }
 
+unsafe impl<S: Send> Sync for CachedStateProvider<S> {}
+
 impl<S> CachedStateProvider<S>
 where
 	S: StateProvider,
