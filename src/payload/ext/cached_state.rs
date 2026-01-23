@@ -46,6 +46,13 @@ pub struct CachedStateProvider<S> {
 	caches: ExecutionCache,
 }
 
+// SAFETY: `CachedStateProvider` is `Sync` when `S` is `Send` because:
+// 1. All access to `state_provider` is through `&self` methods that perform
+//    reads only
+// 2. The `caches` field uses `DashMap` which is thread-safe
+// 3. The `StateProvider` trait methods take `&self` and are read-only
+unsafe impl<S: Send> Sync for CachedStateProvider<S> {}
+
 impl<S> CachedStateProvider<S>
 where
 	S: StateProvider,

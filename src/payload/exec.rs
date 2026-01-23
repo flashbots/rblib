@@ -1,5 +1,5 @@
 use {
-	crate::{alloy, prelude::*, reth},
+	crate::{alloy, prelude::*, reth, revm::database::bal::EvmDatabaseError},
 	alloy::{
 		consensus::{crypto::RecoveryError, transaction::TxHashRef},
 		evm::revm::context::result::ExecutionResult as RevmExecutionResult,
@@ -31,16 +31,18 @@ use {
 	std::fmt::Debug,
 };
 
+type DbError = EvmDatabaseError<ProviderError>;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ExecutionError<P: Platform> {
 	#[error("Invalid signature: {0}")]
 	InvalidSignature(#[from] RecoveryError),
 
 	#[error("Invalid transaction: {0}")]
-	InvalidTransaction(types::EvmError<P, ProviderError>),
+	InvalidTransaction(types::EvmError<P, DbError>),
 
 	#[error("Invalid transaction {0} cannot be dropped from bundle: {1}")]
-	InvalidBundleTransaction(TxHash, types::EvmError<P, ProviderError>),
+	InvalidBundleTransaction(TxHash, types::EvmError<P, DbError>),
 
 	#[error("Transaction {0} in the bundle is not allowed to revert.")]
 	BundleTransactionReverted(TxHash, Option<types::EvmHaltReason<P>>),
@@ -106,7 +108,7 @@ impl<P: Platform> Executable<P> {
 		block: &BlockContext<P>,
 		db: &DB,
 		_ctx: &P::CheckpointContext,
-	) -> Result<ExecutionResult<P>, types::EvmError<P, ProviderError>>
+	) -> Result<ExecutionResult<P>, types::EvmError<P, DbError>>
 	where
 		DB: DatabaseRef<Error = ProviderError> + Debug,
 	{

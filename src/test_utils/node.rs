@@ -487,6 +487,8 @@ where
 			.parse()
 			.expect("Failed to parse data dir path"),
 		static_files_path: None,
+		pprof_dumps_path: None,
+		rocksdb_path: None,
 	};
 
 	let db_path = datadir
