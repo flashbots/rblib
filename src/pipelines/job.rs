@@ -1,8 +1,8 @@
 use {
-	super::traits,
+	super::metrics,
 	crate::{
 		alloy,
-		pipelines::{exec::PipelineExecutor, service::ServiceContext},
+		pipelines::exec::{PipelineExecutor, PipelineFuture},
 		prelude::*,
 		reth,
 	},
@@ -10,6 +10,7 @@ use {
 	core::{
 		pin::Pin,
 		task::{Context, Poll},
+		time::Duration,
 	},
 	futures::{FutureExt, future::Shared},
 	reth::{
@@ -35,26 +36,18 @@ use {
 ///
 /// This job will automatically terminate after a deadline even `resolve_kind`
 /// is not called.
-pub(super) struct PayloadJob<P, Provider>
-where
-	P: Platform,
-	Provider: traits::ProviderBounds<P>,
-{
+pub(super) struct PayloadJob<P: Platform> {
 	block: BlockContext<P>,
-	fut: ExecutorFuture<P, Provider>,
-	/// The deadline when this job should resolve.
+	fut: ExecutorFuture<P>,
 	deadline: Pin<Box<Sleep>>,
 }
 
-impl<P, Provider> PayloadJob<P, Provider>
-where
-	P: Platform,
-	Provider: traits::ProviderBounds<P>,
-{
+impl<P: Platform> PayloadJob<P> {
 	pub(super) fn new(
 		pipeline: &Arc<Pipeline<P>>,
 		block: BlockContext<P>,
-		service: &Arc<ServiceContext<P, Provider>>,
+		metrics: Arc<metrics::Payload>,
+		deadline: Duration,
 	) -> Self {
 		debug!(
 			"New Payload Job {} with block context: {block:#?}",
@@ -64,32 +57,21 @@ where
 		let fut = ExecutorFuture::new(PipelineExecutor::run(
 			Arc::clone(pipeline),
 			block.clone(),
-			Arc::clone(service),
+			metrics,
 		));
-
-		// Job should complete within deadline (12s) even if GetPayload is never
-		// called. This prevents job accumulation.
-		// TODO: when FCU update avalanche is fixed we could replace
-		// builder.deadline with payload.attributes.timeout
-		let deadline =
-			Box::pin(tokio::time::sleep(service.node_config().builder.deadline));
 
 		Self {
 			block,
 			fut,
-			deadline,
+			deadline: Box::pin(tokio::time::sleep(deadline)),
 		}
 	}
 }
 
-impl<P, Provider> RethPayloadJobTrait for PayloadJob<P, Provider>
-where
-	P: Platform,
-	Provider: traits::ProviderBounds<P>,
-{
+impl<P: Platform> RethPayloadJobTrait for PayloadJob<P> {
 	type BuiltPayload = types::BuiltPayload<P>;
 	type PayloadAttributes = types::PayloadBuilderAttributes<P>;
-	type ResolvePayloadFuture = ExecutorFuture<P, Provider>;
+	type ResolvePayloadFuture = ExecutorFuture<P>;
 
 	fn best_payload(&self) -> Result<Self::BuiltPayload, PayloadBuilderError> {
 		unimplemented!("PayloadJob::best_payload is not implemented");
@@ -128,11 +110,7 @@ where
 /// This future is polled for the first time by the Reth runtime when the
 /// `PayloadJob` is created. Here we want to immediately start executing
 /// the pipeline instead of waiting for the `resolve_kind` to be called.
-impl<P, Provider> Future for PayloadJob<P, Provider>
-where
-	P: Platform,
-	Provider: traits::ProviderBounds<P>,
-{
+impl<P: Platform> Future for PayloadJob<P> {
 	type Output = Result<(), PayloadBuilderError>;
 
 	fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -173,14 +151,13 @@ where
 /// This future wraps the `PipelineExecutor` and is used to poll the
 /// internal executor of the pipeline. Once this future is resolved, it
 /// can be polled again and will return copy of the resolved payload.
-pub(super) struct ExecutorFuture<P, Provider>
+pub(super) struct ExecutorFuture<P>
 where
 	P: Platform,
-	Provider: traits::ProviderBounds<P>,
 {
 	payload_id: PayloadId,
 	started_at: Instant,
-	state: ExecutorFutureState<P, Provider>,
+	state: ExecutorFutureState<P>,
 }
 
 /// This enum allows us to wrap the `PipelineExecutor` future
@@ -191,25 +168,23 @@ where
 /// Whenever any of the copies of the future is polled, it will poll the
 /// executor, if any copy resolved, all copies will also resolve with the same
 /// result.
-enum ExecutorFutureState<P, Provider>
+enum ExecutorFutureState<P>
 where
 	P: Platform,
-	Provider: traits::ProviderBounds<P>,
 {
 	Ready(Result<types::BuiltPayload<P>, Arc<PayloadBuilderError>>),
-	Future(Shared<PipelineExecutor<P, Provider>>),
+	Future(Shared<PipelineFuture<P>>),
 }
 
-impl<P, Provider> ExecutorFuture<P, Provider>
+impl<P> ExecutorFuture<P>
 where
 	P: Platform,
-	Provider: traits::ProviderBounds<P>,
 {
-	pub(super) fn new(executor: PipelineExecutor<P, Provider>) -> Self {
+	pub(super) fn new(executor: PipelineExecutor<P>) -> Self {
 		Self {
 			started_at: Instant::now(),
 			payload_id: executor.payload_id(),
-			state: ExecutorFutureState::Future(executor.shared()),
+			state: ExecutorFutureState::Future(executor.into_future().shared()),
 		}
 	}
 
@@ -261,10 +236,9 @@ where
 	}
 }
 
-impl<P, Provider> Future for ExecutorFuture<P, Provider>
+impl<P> Future for ExecutorFuture<P>
 where
 	P: Platform,
-	Provider: traits::ProviderBounds<P>,
 {
 	type Output = Result<types::BuiltPayload<P>, PayloadBuilderError>;
 
@@ -279,8 +253,8 @@ where
 			),
 
 			// we are still in progress. keep polling the inner executor future.
-			ExecutorFutureState::Future(ref mut executor) => {
-				match executor.poll_unpin(cx) {
+			ExecutorFutureState::Future(ref mut future) => {
+				match future.poll_unpin(cx) {
 					Poll::Ready(result) => {
 						// got a result. All future polls will return the result directly
 						// without polling the executor again.
@@ -304,10 +278,9 @@ where
 /// We want this to be cloneable because the `resolve_kind` method could
 /// potentially return multiple copies of the future, and we want all of them to
 /// resolve with the same result at the same time.
-impl<P, Provider> Clone for ExecutorFuture<P, Provider>
+impl<P> Clone for ExecutorFuture<P>
 where
 	P: Platform,
-	Provider: traits::ProviderBounds<P>,
 {
 	fn clone(&self) -> Self {
 		Self {

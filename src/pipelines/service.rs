@@ -56,13 +56,12 @@ where
 
 		let provider = Arc::new(ctx.provider().clone());
 
+		let metrics =
+			metrics::Payload::with_scope(&format!("{}_payloads", pipeline.name()));
+
 		let service = ServiceContext {
 			provider: Arc::clone(&provider),
 			node_config: ctx.config().clone(),
-			metrics: metrics::Payload::with_scope(&format!(
-				"{}_payloads",
-				pipeline.name()
-			)),
 		};
 
 		// assign metric names to each step in the pipeline.
@@ -86,7 +85,7 @@ where
 		}
 
 		let (service, builder) = PayloadBuilderService::new(
-			JobGenerator::new(pipeline, service),
+			JobGenerator::new(pipeline, service, metrics),
 			ctx.provider().canonical_state_stream(),
 		);
 
@@ -101,14 +100,13 @@ where
 /// There is one service context instance per reth node. This type gives
 /// individual jobs access to the node state, transaction pool and other
 /// runtime facilities that are managed by reth.
-pub(super) struct ServiceContext<Plat, Provider>
+struct ServiceContext<Plat, Provider>
 where
 	Plat: Platform,
 	Provider: traits::ProviderBounds<Plat>,
 {
 	provider: Arc<Provider>,
 	node_config: NodeConfig<types::ChainSpec<Plat>>,
-	metrics: metrics::Payload,
 }
 
 impl<Plat, Provider> ServiceContext<Plat, Provider>
@@ -116,22 +114,16 @@ where
 	Plat: Platform,
 	Provider: traits::ProviderBounds<Plat>,
 {
-	pub(super) fn provider(&self) -> &Provider {
+	fn provider(&self) -> &Provider {
 		&self.provider
 	}
 
-	pub(super) const fn node_config(
-		&self,
-	) -> &NodeConfig<types::ChainSpec<Plat>> {
+	const fn node_config(&self) -> &NodeConfig<types::ChainSpec<Plat>> {
 		&self.node_config
 	}
 
-	pub(super) const fn chain_spec(&self) -> &Arc<types::ChainSpec<Plat>> {
+	const fn chain_spec(&self) -> &Arc<types::ChainSpec<Plat>> {
 		&self.node_config().chain
-	}
-
-	pub(super) const fn metrics(&self) -> &metrics::Payload {
-		&self.metrics
 	}
 }
 
@@ -149,6 +141,7 @@ where
 {
 	pipeline: Arc<Pipeline<Plat>>,
 	service: Arc<ServiceContext<Plat, Provider>>,
+	metrics: Arc<metrics::Payload>,
 	pre_cached: Option<PrecachedState>,
 }
 
@@ -157,9 +150,10 @@ where
 	Plat: Platform,
 	Provider: traits::ProviderBounds<Plat>,
 {
-	pub(super) fn new(
+	fn new(
 		pipeline: Pipeline<Plat>,
 		service: ServiceContext<Plat, Provider>,
+		metrics: metrics::Payload,
 	) -> Self {
 		let pipeline = Arc::new(pipeline);
 		let service = Arc::new(service);
@@ -167,6 +161,7 @@ where
 		Self {
 			pipeline,
 			service,
+			metrics: Arc::new(metrics),
 			pre_cached: None,
 		}
 	}
@@ -190,7 +185,7 @@ where
 	Plat: Platform,
 	Provider: traits::ProviderBounds<Plat>,
 {
-	type Job = PayloadJob<Plat, Provider>;
+	type Job = PayloadJob<Plat>;
 
 	fn new_payload_job(
 		&self,
@@ -218,7 +213,18 @@ where
 		)
 		.map_err(PayloadBuilderError::other)?;
 
-		Ok(PayloadJob::new(&self.pipeline, block_ctx, &self.service))
+		// Job should complete within deadline (12s) even if GetPayload is never
+		// called. This prevents job accumulation.
+		// TODO: when FCU update avalanche is fixed we could replace
+		// builder.deadline with payload.attributes.timeout
+		let deadline = self.service.node_config().builder.deadline;
+
+		Ok(PayloadJob::new(
+			&self.pipeline,
+			block_ctx,
+			self.metrics.clone(),
+			deadline,
+		))
 	}
 
 	fn on_new_state<N: NodePrimitives>(
