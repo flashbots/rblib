@@ -194,7 +194,9 @@ where
 		let limit = min(limit, self.ready_orders_rx.len());
 		let mut buffer = Vec::with_capacity(limit);
 
-		while let Ok(task) = self.ready_orders_rx.try_recv() {
+		while let Ok(task) = self.ready_orders_rx.try_recv()
+			&& buffer.len() < limit
+		{
 			buffer.push(task);
 		}
 
