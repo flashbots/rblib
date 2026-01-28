@@ -6,6 +6,7 @@ use {
 		collections::{HashMap, HashSet, hash_map::Entry},
 		hash::Hash,
 	},
+	tokio::sync::mpsc,
 	tracing::error,
 };
 
@@ -48,15 +49,16 @@ pub trait SimTreeResult: Clone {
 #[derive(Debug)]
 pub struct SimTree<NonceSource, Order: OrderpoolOrder, Result> {
 	// fields for nonce management
-	pub nonces: NonceSource,
+	nonces: NonceSource,
 
-	pub sims: HashMap<SimulationId, SimulatedResult<Order, Result>>,
-	pub sims_that_update_one_nonce: HashMap<AccountNonce, SimulationId>,
+	sims: HashMap<SimulationId, SimulatedResult<Order, Result>>,
+	sims_that_update_one_nonce: HashMap<AccountNonce, SimulationId>,
 
-	pub pending_orders: HashMap<Order::ID, PendingOrder<Order>>,
-	pub pending_nonces: HashMap<AccountNonce, Vec<Order::ID>>,
+	pending_orders: HashMap<Order::ID, PendingOrder<Order>>,
+	pending_nonces: HashMap<AccountNonce, Vec<Order::ID>>,
 
-	pub ready_orders: Vec<SimulationRequest<Order>>,
+	ready_orders_tx: mpsc::UnboundedSender<SimulationRequest<Order>>,
+	ready_orders_rx: mpsc::UnboundedReceiver<SimulationRequest<Order>>,
 }
 
 impl<NonceSource, Order, SimResult> SimTree<NonceSource, Order, SimResult>
@@ -66,13 +68,16 @@ where
 	SimResult: SimTreeResult,
 {
 	pub fn new(nonces: NonceSource) -> Self {
+		let (tx, rx) = mpsc::unbounded_channel();
+
 		Self {
 			nonces,
 			sims: HashMap::default(),
 			sims_that_update_one_nonce: HashMap::default(),
 			pending_orders: HashMap::default(),
 			pending_nonces: HashMap::default(),
-			ready_orders: Vec::default(),
+			ready_orders_tx: tx,
+			ready_orders_rx: rx,
 		}
 	}
 
@@ -105,7 +110,7 @@ where
 				});
 			}
 			OrderNonceState::Ready(parents) => {
-				self.ready_orders.push(SimulationRequest {
+				let _ = self.ready_orders_tx.send(SimulationRequest {
 					id: rand::random(),
 					order,
 					parents,
@@ -186,8 +191,14 @@ where
 		&mut self,
 		limit: usize,
 	) -> Vec<SimulationRequest<Order>> {
-		let limit = min(limit, self.ready_orders.len());
-		self.ready_orders.drain(..limit).collect()
+		let limit = min(limit, self.ready_orders_rx.len());
+		let mut buffer = Vec::with_capacity(limit);
+
+		while let Ok(task) = self.ready_orders_rx.try_recv() {
+			buffer.push(task);
+		}
+
+		buffer
 	}
 
 	// we don't really need state here because nonces are cached but its smaller
@@ -245,7 +256,7 @@ where
 			let pending_state = self.get_order_nonce_state(&ready_order)?;
 			match pending_state {
 				OrderNonceState::Ready(parents) => {
-					self.ready_orders.push(SimulationRequest {
+					let _ = self.ready_orders_tx.send(SimulationRequest {
 						id: rand::random(),
 						order: ready_order,
 						parents,
@@ -273,6 +284,26 @@ where
 	}
 
 	pub fn is_ready(&self) -> bool {
-		!self.ready_orders.is_empty()
+		!self.ready_orders_rx.is_empty()
+	}
+
+	pub async fn receive_ready_order(
+		&mut self,
+	) -> Option<SimulationRequest<Order>> {
+		self.ready_orders_rx.recv().await
+	}
+
+	pub fn receive_ready_order_blocking(
+		&mut self,
+	) -> Option<SimulationRequest<Order>> {
+		self.ready_orders_rx.blocking_recv()
+	}
+
+	pub fn ready_orders_count(&self) -> usize {
+		self.ready_orders_rx.len()
+	}
+
+	pub fn pending_orders_count(&self) -> usize {
+		self.pending_orders.len()
 	}
 }
