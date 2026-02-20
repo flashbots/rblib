@@ -1,0 +1,115 @@
+[package]
+name = "rblib-core"
+description = "Modular Payload SDK for building ethereum block builders."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+authors.workspace = true
+exclude.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+doctest = false
+
+[features]
+default = ["optimism", "jemalloc"]
+jemalloc = ["dep:tikv-jemallocator", "reth-origin/jemalloc"]
+jemalloc-prof = ["jemalloc", "tikv-jemallocator?/profiling", "reth-origin/jemalloc-prof"]
+
+optimism = [
+    "dep:op-alloy",
+    "dep:op-alloy-rpc-types-engine",
+    "dep:reth-optimism-node",
+    "dep:reth-optimism-chainspec",
+    "dep:reth-optimism-forks",
+    "dep:reth-optimism-primitives",
+    "dep:reth-optimism-txpool",
+    "dep:reth-optimism-rpc",
+    "dep:reth-optimism-consensus",
+    "dep:reth-optimism-evm",
+    "dep:reth-payload-util",
+    "dep:reth-optimism-cli",
+    "dep:op-alloy-flz"
+]
+
+test-utils = [
+    "reth-ethereum/test-utils",
+    "dep:alloy-genesis"
+]
+
+[target.'cfg(unix)'.dependencies]
+tikv-jemallocator = { workspace = true, optional = true }
+
+[dependencies]
+# Common
+itertools.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+dashmap.workspace = true
+uuid.workspace = true
+serde.workspace = true
+metrics.workspace = true
+
+# test utils
+rand.workspace = true
+eyre.workspace = true
+
+# Alloy
+alloy-origin.workspace = true
+alloy-evm.workspace = true
+alloy-serde.workspace = true
+
+# Reth
+reth-origin.workspace = true
+reth-evm.workspace = true
+reth-errors.workspace = true
+reth-cli.workspace = true
+reth-cli-commands.workspace = true
+reth-rpc-eth-types.workspace = true
+reth-basic-payload-builder.workspace = true
+reth-ethereum-payload-builder.workspace = true
+reth-ethereum.workspace = true
+reth-network-peers.workspace = true
+reth-transaction-pool.workspace = true
+reth-payload-builder.workspace = true
+reth-payload-primitives.workspace = true
+reth-node-builder.workspace = true
+reth-node-api.workspace = true
+reth-chainspec.workspace = true
+reth-metrics.workspace = true
+reth-provider.workspace = true
+reth-tracing-otlp.workspace = true
+reth-db.workspace = true
+reth-eth-wire-types.workspace = true
+reth-network.workspace = true
+reth-node-types.workspace = true
+
+# Revm
+revm-database.workspace = true
+
+# Optimism (optional)
+op-alloy = { workspace = true, optional = true }
+op-alloy-rpc-types-engine = { workspace = true, optional = true }
+
+reth-optimism-node = { workspace = true, optional = true }
+reth-optimism-chainspec = { workspace = true, optional = true }
+reth-optimism-forks = { workspace = true, optional = true }
+reth-optimism-rpc = { workspace = true, optional = true }
+reth-optimism-txpool = { workspace = true, optional = true }
+reth-optimism-consensus = { workspace = true, optional = true }
+reth-optimism-evm = { workspace = true, optional = true }
+reth-payload-util = { workspace = true, optional = true }
+reth-optimism-cli = { workspace = true, optional = true }
+reth-optimism-primitives = { workspace = true, optional = true }
+op-alloy-flz = { workspace = true, optional = true }
+
+# test utils
+alloy-genesis = { workspace = true, optional = true }
+
+[dev-dependencies]
+rblib-core = { path = ".", features = ["test-utils"] }
