@@ -1,4 +1,5 @@
 use {
+	super::used_state::{UsedStateInspector, UsedStateTrace},
 	crate::{alloy, prelude::*, reth, revm::database::bal::EvmDatabaseError},
 	alloy::{
 		consensus::{crypto::RecoveryError, transaction::TxHashRef},
@@ -117,9 +118,17 @@ impl<P: Platform> Executable<P> {
 			.with_bundle_update()
 			.build();
 
+		let mut used_state = UsedStateTrace::default();
+		let mut inspector = UsedStateInspector::new(&mut used_state);
+		inspector.use_tx_nonce(&tx);
+
 		let result = block
 			.evm_config()
-			.evm_with_env(&mut state, block.evm_env().clone())
+			.evm_with_env_and_inspector(
+				&mut state,
+				block.evm_env().clone(),
+				inspector,
+			)
 			.transact_commit(&tx)?;
 
 		state.merge_transitions(BundleRetention::Reverts);
@@ -128,6 +137,7 @@ impl<P: Platform> Executable<P> {
 			source: Executable::Transaction(tx),
 			results: vec![result],
 			state: state.take_bundle(),
+			used_state: Box::new(used_state),
 		})
 	}
 
@@ -215,14 +225,19 @@ impl<P: Platform> Executable<P> {
 
 		let mut discarded = Vec::new();
 		let mut results = Vec::with_capacity(bundle.transactions().len());
+		let mut used_state = UsedStateTrace::default();
 
 		for transaction in bundle.transactions_encoded() {
 			let tx_hash = *transaction.tx_hash();
 			let optional = bundle.is_optional(&tx_hash);
 			let allowed_to_fail = bundle.is_allowed_to_fail(&tx_hash);
 
+			let mut tx_used_state = UsedStateTrace::default();
+			let mut inspector = UsedStateInspector::new(&mut tx_used_state);
+			inspector.use_tx_nonce(transaction.1);
+
 			let result = evm_config
-				.evm_with_env(&mut db, evm_env.clone())
+				.evm_with_env_and_inspector(&mut db, evm_env.clone(), inspector)
 				.transact(&transaction);
 
 			match result {
@@ -232,6 +247,9 @@ impl<P: Platform> Executable<P> {
 				{
 					results.push(result);
 					db.commit(state);
+					// Only fold in the state of a transaction that is kept in the
+					// bundle. The state of a discarded transaction is rolled back.
+					used_state.append_trace(&tx_used_state);
 				}
 				// Optional failing transaction, not allowed to fail
 				// or optional invalid transaction: discard it
@@ -276,6 +294,7 @@ impl<P: Platform> Executable<P> {
 			source: Executable::Bundle(bundle),
 			results,
 			state,
+			used_state: Box::new(used_state),
 		})
 	}
 }
@@ -403,6 +422,12 @@ pub struct ExecutionResult<P: Platform> {
 
 	/// The aggregated state executing all transactions from the source.
 	pub(crate) state: BundleState,
+
+	/// The state read and written while executing the source, recorded by an
+	/// EVM inspector. For a bundle this is the aggregate over the transactions
+	/// that were kept in the bundle. Boxed to keep `ExecutionResult` compact,
+	/// since it is embedded in a checkpoint history enum.
+	pub(crate) used_state: Box<UsedStateTrace>,
 }
 
 impl<P: Platform> ExecutionResult<P> {
@@ -415,6 +440,14 @@ impl<P: Platform> ExecutionResult<P> {
 	/// this execution unit.
 	pub const fn state(&self) -> &BundleState {
 		&self.state
+	}
+
+	/// Returns the state read and written while executing this transaction or
+	/// bundle, as recorded by an EVM inspector. Builders can use this to detect
+	/// conflicts between orders and to parallelize block construction across
+	/// orders that do not touch the same state.
+	pub fn used_state(&self) -> &UsedStateTrace {
+		&self.used_state
 	}
 
 	/// Access to the individual transaction results that make up this execution
@@ -744,5 +777,70 @@ mod tests {
 		let cloned = result.clone();
 
 		assert_eq!(result, cloned);
+	}
+
+	#[test]
+	fn test_execute_transaction_records_signer_nonce_in_used_state() {
+		use crate::{alloy::primitives::U256, payload::SlotKey};
+
+		let block = BlockContext::<Ethereum>::mocked();
+		let checkpoint = block.start();
+		let tx = test_tx::<Ethereum>(0, 0);
+		let signer = tx.signer();
+
+		let result = Executable::execute_transaction(
+			tx,
+			&block,
+			&checkpoint,
+			checkpoint.context(),
+		)
+		.unwrap();
+
+		// The signer nonce is modelled as a read of the pre-value and a write of
+		// the post-value at slot zero of the signer account.
+		let slot = SlotKey {
+			address: signer,
+			key: B256::default(),
+		};
+		let used = result.used_state();
+		assert_eq!(
+			used.read_slot_values.get(&slot),
+			Some(&B256::from(U256::from(0u64)))
+		);
+		assert_eq!(
+			used.written_slot_values.get(&slot),
+			Some(&B256::from(U256::from(1u64)))
+		);
+	}
+
+	#[test]
+	fn test_execute_bundle_aggregates_used_state() {
+		use crate::{alloy::primitives::U256, payload::SlotKey};
+
+		let block = BlockContext::<Ethereum>::mocked();
+		let checkpoint = block.start();
+		let (bundle, txs) = test_bundle::<Ethereum>(0, 0);
+		let signer = txs[0].signer();
+
+		let result = Executable::Bundle(bundle)
+			.execute(&block, &checkpoint, checkpoint.context())
+			.unwrap();
+
+		// The three bundle transactions share a signer and consume nonces 0..=2,
+		// so the aggregate keeps the first read (nonce 0) and the last write
+		// (nonce 3) at slot zero of the signer account.
+		let slot = SlotKey {
+			address: signer,
+			key: B256::default(),
+		};
+		let used = result.used_state();
+		assert_eq!(
+			used.read_slot_values.get(&slot),
+			Some(&B256::from(U256::from(0u64)))
+		);
+		assert_eq!(
+			used.written_slot_values.get(&slot),
+			Some(&B256::from(U256::from(3u64)))
+		);
 	}
 }
