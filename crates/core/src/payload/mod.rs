@@ -7,6 +7,7 @@ mod checkpoint;
 mod exec;
 mod ext;
 mod span;
+mod used_state;
 
 pub use {
 	block::{BlockContext, Error as BlockError},
@@ -20,4 +21,5 @@ pub use {
 		SpanExt,
 	},
 	span::{Error as SpanError, Span},
+	used_state::{SlotKey, UsedStateInspector, UsedStateTrace},
 };
