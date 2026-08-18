@@ -6,13 +6,14 @@ use {
 		consensus::{crypto::RecoveryError, transaction::TxHashRef},
 		primitives::{B256, TxHash},
 	},
-	dashmap::{DashMap, DashSet},
+	dashmap::{DashMap, DashSet, Entry},
 	parking_lot::RwLock,
 	reth::primitives::{Recovered, SealedHeader},
-	std::sync::Arc,
+	std::{sync::Arc, time::Instant},
 };
 
 mod host;
+mod lifecycle;
 mod maintain;
 mod native;
 mod report;
@@ -23,6 +24,7 @@ mod step;
 
 // Order Pool public API
 pub use {
+	lifecycle::{TxLifecycle, TxLifecycleLog, TxMined, TxPayloadStage, TxSource},
 	rpc::{BundleResult, BundlesApiClient},
 	setup::HostNodeInstaller,
 	step::{
@@ -86,6 +88,11 @@ impl<P: Platform> OrderPool<P> {
 	/// returned by `best_orders()`.
 	pub fn insert(&self, order: Order<P>) {
 		let order_hash = order.hash();
+		let received = Instant::now();
+		let source = match &order {
+			Order::Transaction(_) => TxSource::Transaction,
+			Order::Bundle(_) => TxSource::Bundle(order_hash),
+		};
 
 		for tx in order.transactions() {
 			// keep track of all orders that contain this transaction.
@@ -98,25 +105,91 @@ impl<P: Platform> OrderPool<P> {
 				.entry(tx_hash)
 				.or_default()
 				.insert(order_hash);
+
+			// start tracking the lifecycle of this transaction
+			self
+				.inner
+				.lifecycle
+				.record_received(tx_hash, source, received);
+		}
+
+		// remember the members of the bundle so that pipeline events keyed by
+		// its hash can be resolved after it left the pool. A transaction order
+		// is keyed by its own transaction hash and needs no record.
+		if order.is_bundle() {
+			let members = order
+				.transactions()
+				.iter()
+				.map(|tx| *tx.tx_hash())
+				.collect();
+			self
+				.inner
+				.lifecycle
+				.record_order(order_hash, members, received);
 		}
 
 		self.inner.orders.insert(order_hash, order);
 	}
 
 	/// Removes an order from the pool and makes it no longer available through
-	/// `best_orders()`.
+	/// `best_orders()`. This is the single eviction path of the pool: every
+	/// member transaction of the order is unmapped from it, and a member that
+	/// no other live order holds is marked as dropped in the lifecycle log,
+	/// unless it was received from the host node mempool, where it still lives.
 	pub fn remove(&self, order_hash: &B256) {
-		self.inner.orders.remove(order_hash);
+		let removed = self.inner.orders.remove(order_hash);
 		self.inner.host.remove_transaction(*order_hash);
+
+		if let Some((_, order)) = removed {
+			let now = Instant::now();
+			// `release_member` returns its `tx_map` guard before the lifecycle
+			// log is called for the orphaned member.
+			order
+				.transactions()
+				.iter()
+				.map(|tx| *tx.tx_hash())
+				.filter(|tx_hash| !self.release_member(tx_hash, order_hash))
+				.for_each(|tx_hash| {
+					self
+						.inner
+						.lifecycle
+						.record_dropped_unless_mempool(tx_hash, now);
+				});
+		}
 	}
 
-	/// Removes all orders that contain a specific transaction hash.
+	/// Removes all orders that contain a specific transaction hash. The
+	/// transaction itself is also removed from the transaction pool of the host
+	/// node, so it is marked as dropped in the lifecycle log whatever its
+	/// source (a no-op if it was mined); the orders holding it are removed
+	/// through [`Self::remove`], which takes care of their other members.
 	pub fn remove_any_with(&self, tx_hash: TxHash) {
 		self.inner.host.remove_transaction(tx_hash);
-		if let Some((_, orders)) = self.inner.tx_map.remove(&tx_hash) {
-			for order_hash in orders {
-				self.remove(&order_hash);
+		self.inner.lifecycle.record_dropped_now(tx_hash);
+
+		// take the set out of the map before removing the orders, so that no
+		// guard on `tx_map` is held while `remove` updates it.
+		let orders = self.inner.tx_map.remove(&tx_hash);
+		orders
+			.into_iter()
+			.flat_map(|(_, orders)| orders)
+			.for_each(|order_hash| self.remove(&order_hash));
+	}
+
+	/// Unmaps `order_hash` from the set of orders holding `tx_hash`, dropping
+	/// the map entry once the set is empty. Returns `true` if another live
+	/// order still holds the transaction.
+	fn release_member(&self, tx_hash: &TxHash, order_hash: &B256) -> bool {
+		match self.inner.tx_map.entry(*tx_hash) {
+			Entry::Occupied(occupied) => {
+				occupied.get().remove(order_hash);
+				let still_live = !occupied.get().is_empty();
+				if !still_live {
+					occupied.remove();
+				}
+				still_live
 			}
+			Entry::Vacant(_) => false,
 		}
 	}
 }
@@ -137,6 +210,28 @@ impl<P: Platform> OrderPool<P> {
 	/// This is done by the `attach_pool` method during node components setup.
 	pub fn is_attached_to_host(&self) -> bool {
 		self.inner.host.is_attached()
+	}
+}
+
+/// Transaction lifecycle
+impl<P: Platform> OrderPool<P> {
+	/// Creates an order pool that records the lifecycle of the transactions it
+	/// sees into the given log. Use this to configure the retention and
+	/// capacity of the log, otherwise `OrderPool::default()` creates a log with
+	/// default settings.
+	pub fn with_lifecycle(lifecycle: TxLifecycleLog) -> Self {
+		Self {
+			inner: Arc::new(OrderPoolInner {
+				lifecycle,
+				..Default::default()
+			}),
+		}
+	}
+
+	/// Returns the log that records when transactions seen by this pool were
+	/// received, considered for inclusion, included in a payload and mined.
+	pub fn lifecycle(&self) -> &TxLifecycleLog {
+		&self.inner.lifecycle
 	}
 }
 
@@ -167,6 +262,10 @@ struct OrderPoolInner<P: Platform> {
 	/// The host Reth node that this order pool is attached to.
 	/// Attachment is done by the `attach_pool` method during node components
 	host: Arc<host::HostNode<P>>,
+
+	/// Records when transactions seen by this pool were received, considered
+	/// for inclusion, included in a payload and mined.
+	lifecycle: TxLifecycleLog,
 }
 
 impl<P: Platform> OrderPoolInner<P> {
