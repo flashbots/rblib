@@ -161,11 +161,9 @@ impl<B: Send + Sync + Bundle<P>, P: Send + Sync + Platform>
 			accumulated_weighted_fee += max_fee * gas_limit;
 			total_gas_limit += gas_limit;
 		}
-		let effective_gas_price = if total_gas_limit != 0 {
-			accumulated_weighted_fee / total_gas_limit
-		} else {
-			0
-		};
+		let effective_gas_price = accumulated_weighted_fee
+			.checked_div(total_gas_limit)
+			.unwrap_or(0);
 		Self {
 			effective_gas_price,
 			marker: PhantomData,

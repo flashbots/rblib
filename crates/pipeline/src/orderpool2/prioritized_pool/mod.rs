@@ -112,7 +112,7 @@ where
 				.insert(new_nonce.account, new_nonce.nonce);
 
 			if let Some(orders) = self.main_queue_nonces.remove(&new_nonce.account) {
-				invalidated_orders.extend(orders.into_iter());
+				invalidated_orders.extend(orders);
 			}
 		}
 
